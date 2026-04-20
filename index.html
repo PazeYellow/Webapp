@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Global Chat</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div id="loginBox">
+  <h2>Login / Register</h2>
+  <input id="username" placeholder="username">
+  <input id="password" type="password" placeholder="password">
+  <input id="avatar" placeholder="avatar image URL">
+  <button onclick="login()">Enter</button>
+</div>
+
+<div id="chatBox" style="display:none;">
+  <h2>Global Chat</h2>
+  <div id="messages"></div>
+
+  <input id="msg" placeholder="message">
+  <button onclick="sendMsg()">Send</button>
+</div>
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+const socket = io();
+
+function login(){
+  fetch("/login", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      username: username.value,
+      password: password.value,
+      avatar: avatar.value
+    })
+  }).then(r => r.json()).then(d => {
+    if(!d.error){
+      loginBox.style.display = "none";
+      chatBox.style.display = "block";
+      loadMessages();
+    }
+  })
+}
+
+function sendMsg(){
+  socket.send(msg.value);
+  msg.value = "";
+}
+
+socket.on("message", (data) => {
+  addMessage(data);
+});
+
+function addMessage(data){
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = `
+    <img src="${data.avatar}" width="30" height="30">
+    <b>${data.user}:</b> ${data.text}
+  `;
+  messages.appendChild(div);
+}
+
+function loadMessages(){
+  fetch("/messages").then(r => r.json()).then(data => {
+    data.forEach(addMessage);
+  });
+}
+</script>
+
+</body>
+</html>
