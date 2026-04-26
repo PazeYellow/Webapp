@@ -7,7 +7,12 @@
 <script src="config.js"></script>
 
 <style>
-body { margin:0; font-family:Segoe UI; background:#0d0d0d; color:#eee; }
+body {
+    margin:0;
+    font-family:Segoe UI;
+    background:#0d0d0d;
+    color:#eee;
+}
 
 header {
     text-align:center;
@@ -28,7 +33,7 @@ header {
 
 .title {
     color:#d4af37;
-    margin:20px 0 10px;
+    margin:15px 0 8px;
     font-size:14px;
     border-bottom:1px solid #333;
     padding-bottom:4px;
@@ -43,8 +48,8 @@ header {
 .card {
     background:#222;
     border-radius:8px;
-    text-align:center;
     overflow:hidden;
+    text-align:center;
     position:relative;
 }
 
@@ -99,7 +104,6 @@ button {
 
 <div class="container">
 
-<!-- BANLIST -->
 <div id="forbidden" class="section"></div>
 <div id="limited" class="section"></div>
 <div id="semi_limited" class="section"></div>
@@ -127,7 +131,7 @@ button {
 
 <h3>CUSTOM CARD</h3>
 <input id="cName" placeholder="Name">
-<input id="cType" placeholder="Type (Spell Card / Trap Card / Effect Monster etc)">
+<input id="cType" placeholder="Type (IMPORTANT)">
 <textarea id="cEffect" placeholder="Effect"></textarea>
 <input id="cImg" placeholder="Image URL">
 
@@ -145,64 +149,65 @@ button {
 
 <script>
 
-let cache = null;
-let admin = false;
-let selectedTCG = null;
+let cache=null;
+let admin=false;
+let selectedTCG=null;
 
-const BIN = CONFIG.BIN_ID;
-const KEY = CONFIG.API_KEY;
-const ACCESS = CONFIG.ACCESS_KEY;
+const BIN=CONFIG.BIN_ID;
+const KEY=CONFIG.API_KEY;
+const ACCESS=CONFIG.ACCESS_KEY;
 
 /* ---------------- LOAD ---------------- */
 async function load(){
-
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+    const res=await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`,{
         headers:{
             "X-Master-Key":KEY,
             "X-Access-Key":ACCESS
         }
     });
 
-    const data = await res.json();
-    cache = data.record;
+    const data=await res.json();
+    cache=data.record;
 
     ensure();
     render();
 }
 
-/* ---------------- SAFE INIT ---------------- */
+/* ---------------- INIT ---------------- */
 function ensure(){
     ["forbidden","limited","semi_limited"].forEach(k=>{
         if(!Array.isArray(cache[k])) cache[k]=[];
     });
 }
 
-/* ---------------- STRICT CATEGORY SYSTEM ---------------- */
+/* ---------------- STRICT CATEGORY ENGINE ---------------- */
 function getCategory(card){
 
-    let t = (card.type || "").toLowerCase();
+    const t=(card.type||"").toLowerCase();
 
-    // Normalize official API naming
+    // SPELL/TRAP FIRST (IMPORTANT FIX)
     if(t.includes("spell")) return "Spell";
     if(t.includes("trap")) return "Trap";
 
+    // EXTRA DECK
     if(t.includes("fusion")) return "Fusion";
     if(t.includes("synchro")) return "Synchro";
     if(t.includes("xyz")) return "Xyz";
     if(t.includes("link")) return "Link";
     if(t.includes("ritual")) return "Ritual";
 
+    // MONSTERS
     if(t.includes("normal")) return "Normal Monster";
     if(t.includes("effect")) return "Effect Monster";
 
-    // fallback for custom cards (if user typed "Spell Card", etc)
+    // SAFE CUSTOM HANDLING
     if(t.includes("monster")) return "Effect Monster";
 
     return "Effect Monster";
 }
 
-/* ---------------- ORDER FIXED ---------------- */
-const ORDER = [
+/* ---------------- ORDER (LOCKED) ---------------- */
+const ORDER=[
     "Normal Monster",
     "Effect Monster",
     "Fusion",
@@ -224,31 +229,32 @@ function render(){
 
     ["forbidden","limited","semi_limited"].forEach(zone=>{
 
-        const root = document.getElementById(zone);
-        root.innerHTML = "";
+        const root=document.getElementById(zone);
+        root.innerHTML="";
 
-        const groups = {};
+        const grouped={};
 
-        cache[zone].forEach(c=>{
-            const cat = getCategory(c);
-            if(!groups[cat]) groups[cat]=[];
-            groups[cat].push(c);
+        cache[zone].forEach(card=>{
+            const cat=getCategory(card);
+            if(!grouped[cat]) grouped[cat]=[];
+            grouped[cat].push(card);
         });
 
-        ORDER.forEach(group=>{
+        ORDER.forEach(cat=>{
 
-            if(!groups[group] || groups[group].length===0) return;
+            const list=grouped[cat];
+            if(!list||list.length===0) return;
 
-            const title = document.createElement("div");
+            const title=document.createElement("div");
             title.className="title";
-            title.textContent=group;
+            title.textContent=cat;
 
-            const grid = document.createElement("div");
+            const grid=document.createElement("div");
             grid.className="grid";
 
-            groups[group].sort(sortAlpha).forEach(card=>{
+            list.sort(sortAlpha).forEach(card=>{
 
-                const el = document.createElement("div");
+                const el=document.createElement("div");
                 el.className="card";
 
                 el.innerHTML=`
@@ -259,9 +265,9 @@ function render(){
 
                 if(admin){
 
-                    const controls = el.querySelector(".controls");
+                    const controls=el.querySelector(".controls");
 
-                    const del = document.createElement("button");
+                    const del=document.createElement("button");
                     del.className="del";
                     del.textContent="Delete";
 
@@ -271,13 +277,14 @@ function render(){
                         render();
                     };
 
-                    const mv = document.createElement("button");
+                    const mv=document.createElement("button");
                     mv.className="mv";
                     mv.textContent="Move";
 
                     mv.onclick=()=>{
-                        const i=["forbidden","limited","semi_limited"].indexOf(zone);
-                        const next=["forbidden","limited","semi_limited"][(i+1)%3];
+                        const order=["forbidden","limited","semi_limited"];
+                        const i=order.indexOf(zone);
+                        const next=order[(i+1)%3];
 
                         cache[zone]=cache[zone].filter(c=>c!==card);
                         cache[next].push(card);
@@ -366,7 +373,6 @@ function addCustom(){
     cache[cStatus.value].push({
         name:cName.value,
         type:cType.value,
-        effect:cEffect.value,
         image:cImg.value
     });
 
