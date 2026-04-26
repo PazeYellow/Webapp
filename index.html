@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Banlist System</title>
+<title>Banlist System - Manual Sort</title>
 <script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
 <style>
 body {
@@ -43,21 +44,12 @@ header {
     background: linear-gradient(90deg, #222, transparent);
 }
 
-.title {
-    color:#d4af37;
-    margin:25px 0 10px;
-    font-size:13px;
-    border-bottom:1px solid #444;
-    padding-bottom:4px;
-    text-transform: uppercase;
-    font-weight: bold;
-    letter-spacing: 1px;
-}
-
+/* Grid now acts as the sortable container */
 .grid {
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
     gap:12px;
+    min-height: 50px;
 }
 
 .card {
@@ -67,9 +59,14 @@ header {
     text-align:center;
     position:relative;
     border: 1px solid #333;
+    cursor: default;
 }
 
-.card img { width:100%; display: block; }
+/* Admin-only drag cursor */
+.admin-mode .card { cursor: grab; }
+.admin-mode .card:active { cursor: grabbing; }
+
+.card img { width:100%; display: block; pointer-events: none; }
 
 .name {
     font-size:10px;
@@ -79,13 +76,11 @@ header {
     align-items: center;
     justify-content: center;
     line-height: 1.2;
+    pointer-events: none;
 }
 
 .controls {
     display:none;
-    position:absolute;
-    bottom:0;
-    width:100%;
     background:rgba(0,0,0,0.9);
 }
 
@@ -123,21 +118,11 @@ button {
     text-transform: uppercase;
 }
 
-#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 100px; }
-#results img:hover { border-color: #d4af37; transform: scale(1.1); }
+#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 80px; }
+#results img:hover { border-color: #d4af37; }
 
-/* Small indicator for custom cards if desired, optional */
-.custom-tag {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background: #d4af37;
-    color: #000;
-    font-size: 8px;
-    padding: 2px 4px;
-    border-radius: 3px;
-    font-weight: bold;
-}
+/* Dragging Styles */
+.sortable-ghost { opacity: 0.4; border: 2px dashed #d4af37; }
 </style>
 </head>
 
@@ -145,14 +130,25 @@ button {
 
 <header>YGO BANLIST SYSTEM</header>
 
-<div class="container">
-    <div id="forbidden" class="section"></div>
-    <div id="limited" class="section"></div>
-    <div id="semi_limited" class="section"></div>
+<div class="container" id="main-content">
+    <div class="section">
+        <div class="status-header">Forbidden</div>
+        <div id="forbidden" class="grid"></div>
+    </div>
+    
+    <div class="section">
+        <div class="status-header">Limited</div>
+        <div id="limited" class="grid"></div>
+    </div>
+
+    <div class="section">
+        <div class="status-header">Semi-Limited</div>
+        <div id="semi_limited" class="grid"></div>
+    </div>
 
     <button onclick="login()">ADMIN LOGIN</button>
 
-    <div id="admin" class="admin">
+    <div id="admin-panel" class="admin">
         <h3>TCG DATABASE SEARCH</h3>
         <input id="searchInput" placeholder="Search card name...">
         <button onclick="searchTCG()">Search</button>
@@ -170,21 +166,7 @@ button {
 
         <h3>CUSTOM CARD</h3>
         <input id="cName" placeholder="Card Name">
-        
-        <select id="cType">
-            <option value="" disabled selected>Select Card Type</option>
-            <option value="Normal Monster">Normal Monster</option>
-            <option value="Effect Monster">Effect Monster</option>
-            <option value="Ritual Monster">Ritual Monster</option>
-            <option value="Fusion Monster">Fusion Monster</option>
-            <option value="Synchro Monster">Synchro Monster</option>
-            <option value="XYZ Monster">Xyz Monster</option>
-            <option value="Link Monster">Link Monster</option>
-            <option value="Spell Card">Spell Card</option>
-            <option value="Trap Card">Trap Card</option>
-        </select>
-        
-        <textarea id="cEffect" placeholder="Effect Description"></textarea>
+        <input id="cType" placeholder="Card Type (e.g. Spell, Fusion, etc)">
         <input id="cImg" placeholder="Image URL">
 
         <select id="cStatus">
@@ -201,76 +183,21 @@ button {
 let cache = null;
 let admin = false;
 let selectedTCG = null;
+let sortables = [];
 
 const BIN = CONFIG.BIN_ID;
 const KEY = CONFIG.API_KEY;
 const ACCESS = CONFIG.ACCESS_KEY;
 
-/* ---------------- FIXED DECK BUILDER ORDER ---------------- */
-const ORDER = [
-    "Normal Monsters",
-    "Effect Monsters",
-    "Ritual Monsters",
-    "Fusion Monsters",
-    "Synchro Monsters",
-    "Xyz Monsters",
-    "Link Monsters",
-    "Spell Cards",
-    "Trap Cards"
-];
-
-const DISPLAY_NAMES = {
-    forbidden: "Forbidden",
-    limited: "Limited",
-    semi_limited: "Semi-Limited"
-};
-
-/* ---------------- ROBUST TYPE ENGINE ---------------- */
-function getCategory(card) {
-    const t = (card.type || "").toLowerCase();
-
-    // Spells & Traps
-    if (t.includes("spell")) return "Spell Cards";
-    if (t.includes("trap")) return "Trap Cards";
-
-    // Extra Deck
-    if (t.includes("link")) return "Link Monsters";
-    if (t.includes("xyz") || t.includes("xys")) return "Xyz Monsters";
-    if (t.includes("synchro")) return "Synchro Monsters";
-    if (t.includes("fusion")) return "Fusion Monsters";
-
-    // Main Deck Rituals
-    if (t.includes("ritual")) return "Ritual Monsters";
-
-    // Main Deck Monsters (Normal vs Effect)
-    // If it has "normal" but NO "effect" (to prevent Pendulum Normal Effect monsters mis-sorting)
-    if (t.includes("normal") && !t.includes("effect")) return "Normal Monsters";
-
-    // Everything else (Effect, Pendulum, Toon, Spirit, Gemini, Flip, Tuner) goes to Effect
-    return "Effect Monsters";
-}
-
-/* ---------------- CHECK IF CUSTOM ---------------- */
-// Checks if the card is a custom card so we can sort it to the bottom
-function isCustomCard(card) {
-    if (card.isCustom) return true; // New custom cards
-    if (card.image && !card.image.includes("ygoprodeck.com")) return true; // Legacy custom cards
-    return false;
-}
-
 /* ---------------- LOAD ---------------- */
 async function load() {
-    try {
-        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
-            headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
-        });
-        const data = await res.json();
-        cache = data.record;
-        ensure();
-        render();
-    } catch (e) {
-        console.error("Failed to load banlist.", e);
-    }
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
+    });
+    const data = await res.json();
+    cache = data.record;
+    ensure();
+    render();
 }
 
 function ensure() {
@@ -281,97 +208,87 @@ function ensure() {
 
 /* ---------------- RENDER ---------------- */
 function render() {
+    // Clear existing sortable instances to prevent memory leaks
+    sortables.forEach(s => s.destroy());
+    sortables = [];
+
     ["forbidden","limited","semi_limited"].forEach(zone => {
-        const root = document.getElementById(zone);
-        root.innerHTML = `<div class="status-header">${DISPLAY_NAMES[zone]}</div>`;
+        const grid = document.getElementById(zone);
+        grid.innerHTML = "";
 
-        const grouped = {};
-        ORDER.forEach(o => grouped[o] = []);
+        cache[zone].forEach((card, index) => {
+            const el = document.createElement("div");
+            el.className = "card";
+            el.dataset.id = index; // Keep track of original index
 
-        cache[zone].forEach(card => {
-            const cat = getCategory(card);
-            if (grouped[cat]) {
-                grouped[cat].push(card);
+            el.innerHTML = `
+                <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
+                <div class="name">${card.name}</div>
+                <div class="controls" id="ctrl-${zone}-${index}">
+                    <button class="mv" onclick="moveStatus('${zone}', ${index})">Move Status</button>
+                    <button class="del" onclick="removeCard('${zone}', ${index})">Remove</button>
+                </div>
+            `;
+
+            if (admin) {
+                el.querySelector(".controls").style.display = "block";
             }
+
+            grid.appendChild(el);
         });
 
-        ORDER.forEach(cat => {
-            const list = grouped[cat];
-            if (!list?.length) return;
-
-            // DECK BUILDER SORTING: Official Alphabetical FIRST, then Custom Alphabetical LAST
-            list.sort((a, b) => {
-                const aCustom = isCustomCard(a) ? 1 : 0;
-                const bCustom = isCustomCard(b) ? 1 : 0;
-                
-                if (aCustom !== bCustom) {
-                    return aCustom - bCustom; // Official (0) comes before Custom (1)
+        // Initialize Drag and Drop if Admin
+        if (admin) {
+            sortables.push(new Sortable(grid, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: () => {
+                    updateCacheFromDOM(zone);
                 }
-                
-                // If both are official or both are custom, sort alphabetically
-                return a.name.localeCompare(b.name);
-            });
-
-            const wrap = document.createElement("div");
-            wrap.innerHTML = `<div class="title">${cat}</div>`;
-
-            const grid = document.createElement("div");
-            grid.className = "grid";
-
-            list.forEach(card => {
-                const el = document.createElement("div");
-                el.className = "card";
-
-                const customBadge = isCustomCard(card) ? `<div class="custom-tag">C</div>` : '';
-
-                el.innerHTML = `
-                    <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
-                    ${customBadge}
-                    <div class="name">${card.name}</div>
-                    <div class="controls"></div>
-                `;
-
-                if (admin) {
-                    const controls = el.querySelector(".controls");
-                    controls.style.display = "block";
-
-                    const mv = document.createElement("button");
-                    mv.className = "mv";
-                    mv.textContent = "Move Status";
-                    mv.onclick = () => {
-                        const order = ["forbidden","limited","semi_limited"];
-                        const next = order[(order.indexOf(zone)+1)%3];
-
-                        cache[zone] = cache[zone].filter(c => c !== card);
-                        cache[next].push(card);
-
-                        save();
-                        render();
-                    };
-
-                    const del = document.createElement("button");
-                    del.className = "del";
-                    del.textContent = "Remove";
-                    del.onclick = () => {
-                        cache[zone] = cache[zone].filter(c => c !== card);
-                        save();
-                        render();
-                    };
-
-                    controls.appendChild(mv);
-                    controls.appendChild(del);
-                }
-
-                grid.appendChild(el);
-            });
-
-            wrap.appendChild(grid);
-            root.appendChild(wrap);
-        });
+            }));
+        }
     });
+
+    if(admin) document.getElementById("main-content").classList.add("admin-mode");
 }
 
-/* ---------------- SAVE ---------------- */
+/* ---------------- MANUAL SORT UPDATE ---------------- */
+function updateCacheFromDOM(zone) {
+    const grid = document.getElementById(zone);
+    const newOrder = [];
+    const items = grid.querySelectorAll('.card');
+    
+    // Create a temporary copy of the zone
+    const currentZoneCards = [...cache[zone]];
+    
+    items.forEach(item => {
+        const name = item.querySelector('.name').textContent;
+        // Find the matching card object by name (or we could use a unique ID)
+        const cardObj = currentZoneCards.find(c => c.name === name);
+        if(cardObj) newOrder.push(cardObj);
+    });
+
+    cache[zone] = newOrder;
+    save();
+}
+
+/* ---------------- ACTIONS ---------------- */
+function moveStatus(zone, index) {
+    const order = ["forbidden","limited","semi_limited"];
+    const next = order[(order.indexOf(zone)+1)%3];
+    const card = cache[zone].splice(index, 1)[0];
+    cache[next].push(card);
+    save();
+    render();
+}
+
+function removeCard(zone, index) {
+    if(!confirm("Remove this card?")) return;
+    cache[zone].splice(index, 1);
+    save();
+    render();
+}
+
 async function save() {
     await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
         method:"PUT",
@@ -389,84 +306,51 @@ function login(){
     const pass = prompt("Admin Password");
     if(pass === CONFIG.ADMIN_PASS){
         admin = true;
-        document.getElementById("admin").style.display="block";
+        document.getElementById("admin-panel").style.display="block";
         render();
-    } else {
-        alert("Incorrect Password");
     }
 }
 
 /* ---------------- API ---------------- */
 async function searchTCG(){
     const q = document.getElementById("searchInput").value;
-    if (!q) return;
-    
-    try {
-        const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-        const data = await res.json();
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const results = document.getElementById("results");
+    results.innerHTML="";
 
-        const results = document.getElementById("results");
-        results.innerHTML="";
-
-        if (data.error) {
-            results.innerHTML = `<p style="color:red; font-size:12px;">No cards found.</p>`;
-            return;
-        }
-
-        data.data?.slice(0,10).forEach(c=>{
-            const img=document.createElement("img");
-            img.src=c.card_images[0].image_url_small;
-            img.title=c.name;
-            img.onclick=()=>{
-                selectedTCG=c;
-                document.getElementById("selected").textContent="Selected: "+c.name;
-            };
-            results.appendChild(img);
-        });
-    } catch (e) {
-        console.error("API Search Failed", e);
-    }
+    data.data?.slice(0,10).forEach(c=>{
+        const img=document.createElement("img");
+        img.src=c.card_images[0].image_url_small;
+        img.onclick=()=>{
+            selectedTCG=c;
+            document.getElementById("selected").textContent="Selected: "+c.name;
+        };
+        results.appendChild(img);
+    });
 }
 
 function addTCG(){
     if(!selectedTCG) return alert("Select card");
-
-    cache[document.getElementById("tcgStatus").value].push({
+    const status = document.getElementById("tcgStatus").value;
+    cache[status].push({
         name:selectedTCG.name,
         type:selectedTCG.type,
         image:selectedTCG.card_images[0].image_url
     });
-
-    save();render();
-    
-    // Clear selection
-    selectedTCG = null;
-    document.getElementById("selected").textContent = "";
-    document.getElementById("results").innerHTML = "";
-    document.getElementById("searchInput").value = "";
+    save(); render();
 }
 
 function addCustom(){
     const name=document.getElementById("cName").value;
-    const type=document.getElementById("cType").value;
-    
-    if(!name) return alert("Please provide a Card Name.");
-    if(!type) return alert("Please select a Card Type.");
-
-    cache[document.getElementById("cStatus").value].push({
+    if(!name) return;
+    const status = document.getElementById("cStatus").value;
+    cache[status].push({
         name,
-        type,
-        image:document.getElementById("cImg").value || 'https://via.placeholder.com/150x220?text=Custom+Card',
-        isCustom: true // This flag ensures it is always sorted to the bottom
+        type:document.getElementById("cType").value,
+        image:document.getElementById("cImg").value
     });
-
-    save();render();
-    
-    // Clear inputs
-    document.getElementById("cName").value = "";
-    document.getElementById("cType").value = "";
-    document.getElementById("cEffect").value = "";
-    document.getElementById("cImg").value = "";
+    save(); render();
 }
 
 load();
