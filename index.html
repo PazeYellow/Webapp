@@ -28,34 +28,36 @@ header {
 .section {
     background:#1a1a1a;
     padding:15px;
-    margin-bottom:30px;
+    margin-bottom:40px;
     border-radius:10px;
     border: 1px solid #333;
 }
 
 .status-header {
-    font-size: 20px;
+    font-size: 22px;
     color: #fff;
     text-transform: uppercase;
     border-left: 5px solid #d4af37;
     padding-left: 15px;
     margin-bottom: 20px;
+    background: linear-gradient(90deg, #222, transparent);
 }
 
 .title {
     color:#d4af37;
-    margin:20px 0 10px;
-    font-size:14px;
-    border-bottom:1px solid #333;
+    margin:25px 0 10px;
+    font-size:13px;
+    border-bottom:1px solid #444;
     padding-bottom:4px;
     text-transform: uppercase;
     font-weight: bold;
+    letter-spacing: 1px;
 }
 
 .grid {
     display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(120px,1fr));
-    gap:10px;
+    grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+    gap:12px;
 }
 
 .card {
@@ -64,11 +66,12 @@ header {
     overflow:hidden;
     text-align:center;
     position:relative;
+    border: 1px solid #333;
 }
 
 .card img { width:100%; display: block; }
 
-.name { font-size:11px; padding:6px; min-height: 25px; display: flex; align-items: center; justify-content: center; }
+.name { font-size:10px; padding:6px; min-height: 28px; display: flex; align-items: center; justify-content: center; line-height: 1.2; }
 
 .controls {
     display:none;
@@ -82,12 +85,12 @@ header {
     width:100%;
     font-size:10px;
     border:none;
-    padding:4px;
+    padding:5px;
     cursor:pointer;
 }
 
 .del { background:#8b0000; color:white; }
-.mv { background:#d4af37; color:black; }
+.mv { background:#d4af37; color:black; margin-bottom:1px; }
 
 .admin { display:none; background:#111; padding:20px; border-radius:10px; margin-top:20px; border: 1px dashed #444; }
 
@@ -109,10 +112,11 @@ button {
     border:none;
     cursor:pointer;
     font-weight: bold;
+    text-transform: uppercase;
 }
 
-#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; }
-#results img:hover { border-color: #d4af37; }
+#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+#results img:hover { border-color: #d4af37; transform: scale(1.1); }
 </style>
 </head>
 
@@ -132,7 +136,7 @@ button {
         <input id="searchInput" placeholder="Search card name...">
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
-        <p id="selected" style="color:#d4af37"></p>
+        <p id="selected" style="color:#d4af37; font-size: 14px; font-weight: bold;"></p>
         <select id="tcgStatus">
             <option value="forbidden">Forbidden</option>
             <option value="limited">Limited</option>
@@ -143,9 +147,9 @@ button {
         <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
 
         <h3>CUSTOM CARD</h3>
-        <input id="cName" placeholder="Name">
-        <input id="cType" placeholder="Type (e.g. Fusion Monster, Spell Card, etc)">
-        <textarea id="cEffect" placeholder="Effect"></textarea>
+        <input id="cName" placeholder="Card Name">
+        <input id="cType" placeholder="Type (e.g. Fusion Monster, Spell Card, Effect Monster)">
+        <textarea id="cEffect" placeholder="Effect Description"></textarea>
         <input id="cImg" placeholder="Image URL">
         <select id="cStatus">
             <option value="forbidden">Forbidden</option>
@@ -165,9 +169,10 @@ const BIN = CONFIG.BIN_ID;
 const KEY = CONFIG.API_KEY;
 const ACCESS = CONFIG.ACCESS_KEY;
 
-// 1. ORDER DEFINITION
+// 1. STRICT ORDER DEFINITION
 const ORDER = [
-    "Main Deck Monsters",
+    "Normal Monsters",
+    "Effect Monsters",
     "Ritual Monsters",
     "Fusion Monsters",
     "Synchro Monsters",
@@ -178,41 +183,48 @@ const ORDER = [
 ];
 
 const DISPLAY_NAMES = {
-    "forbidden": "Forbidden Cards",
-    "limited": "Limited Cards",
-    "semi_limited": "Semi-Limited Cards"
+    "forbidden": "Forbidden",
+    "limited": "Limited",
+    "semi_limited": "Semi-Limited"
 };
 
-/* ---------------- CATEGORY ENGINE ---------------- */
+/* ---------------- STRICT CATEGORY ENGINE ---------------- */
 function getCategory(card) {
     const t = (card.type || "").toLowerCase();
 
-    // 1. Check Spells/Traps
+    // 1. Spells & Traps
     if (t.includes("spell")) return "Spell Cards";
     if (t.includes("trap")) return "Trap Cards";
 
-    // 2. Check Extra Deck
+    // 2. Extra Deck (Must check these before Effect Monster)
     if (t.includes("fusion")) return "Fusion Monsters";
     if (t.includes("synchro")) return "Synchro Monsters";
     if (t.includes("xyz")) return "Xyz Monsters";
     if (t.includes("link")) return "Link Monsters";
 
-    // 3. Check Ritual
+    // 3. Ritual
     if (t.includes("ritual")) return "Ritual Monsters";
 
-    // 4. Default to Main Deck Monsters (Normal or Effect)
-    return "Main Deck Monsters";
+    // 4. Main Deck Monsters
+    if (t.includes("normal")) return "Normal Monsters";
+    
+    // Default catch-all for anything else with "Monster" in the type
+    return "Effect Monsters";
 }
 
 /* ---------------- LOAD & RENDER ---------------- */
 async function load() {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
-        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
-    });
-    const data = await res.json();
-    cache = data.record;
-    ensure();
-    render();
+    try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+            headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
+        });
+        const data = await res.json();
+        cache = data.record;
+        ensure();
+        render();
+    } catch (err) {
+        console.error("Failed to load data", err);
+    }
 }
 
 function ensure() {
@@ -226,32 +238,41 @@ function render() {
         const root = document.getElementById(zone);
         root.innerHTML = `<div class="status-header">${DISPLAY_NAMES[zone]}</div>`;
 
-        // Group cards into categories
+        // Create the groups
         const grouped = {};
+        ORDER.forEach(cat => grouped[cat] = []);
+
+        // Sort items into groups
         cache[zone].forEach(card => {
             const cat = getCategory(card);
-            if (!grouped[cat]) grouped[cat] = [];
-            grouped[cat].push(card);
+            if (grouped[cat]) {
+                grouped[cat].push(card);
+            } else {
+                // Fallback for custom types not in ORDER
+                if(!grouped["Effect Monsters"]) grouped["Effect Monsters"] = [];
+                grouped["Effect Monsters"].push(card);
+            }
         });
 
-        // Loop through the specific ORDER
+        // Render each category in the specific ORDER
         ORDER.forEach(cat => {
             const list = grouped[cat];
             if (!list || list.length === 0) return;
 
-            const title = document.createElement("div");
-            title.className = "title";
-            title.textContent = cat;
+            // Sort Alphabetically
+            list.sort((a, b) => a.name.localeCompare(b.name));
 
+            const catContainer = document.createElement("div");
+            catContainer.innerHTML = `<div class="title">${cat}</div>`;
+            
             const grid = document.createElement("div");
             grid.className = "grid";
 
-            // Alphabetical Sort within the category
-            list.sort((a, b) => a.name.localeCompare(b.name)).forEach(card => {
+            list.forEach(card => {
                 const el = document.createElement("div");
                 el.className = "card";
                 el.innerHTML = `
-                    <img src="${card.image || ''}">
+                    <img src="${card.image || ''}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
                     <div class="name">${card.name}</div>
                     <div class="controls"></div>
                 `;
@@ -274,11 +295,13 @@ function render() {
 
                     const del = document.createElement("button");
                     del.className = "del";
-                    del.textContent = "Delete";
+                    del.textContent = "Remove";
                     del.onclick = () => {
-                        cache[zone] = cache[zone].filter(c => c !== card);
-                        save();
-                        render();
+                        if(confirm("Delete " + card.name + "?")) {
+                            cache[zone] = cache[zone].filter(c => c !== card);
+                            save();
+                            render();
+                        }
                     };
 
                     controls.appendChild(mv);
@@ -287,8 +310,8 @@ function render() {
                 grid.appendChild(el);
             });
 
-            root.appendChild(title);
-            root.appendChild(grid);
+            catContainer.appendChild(grid);
+            root.appendChild(catContainer);
         });
     });
 }
@@ -303,15 +326,20 @@ async function save() {
 }
 
 function login() {
-    if (prompt("Admin Password") === CONFIG.ADMIN_PASS) {
+    const pass = prompt("Admin Password");
+    if (pass === CONFIG.ADMIN_PASS) {
         admin = true;
         document.getElementById("admin").style.display = "block";
         render();
+    } else {
+        alert("Incorrect password.");
     }
 }
 
 async function searchTCG() {
     const q = document.getElementById("searchInput").value;
+    if (!q) return;
+    
     const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
     const data = await res.json();
     const results = document.getElementById("results");
@@ -321,7 +349,7 @@ async function searchTCG() {
         data.data.slice(0, 10).forEach(c => {
             const img = document.createElement("img");
             img.src = c.card_images[0].image_url_small;
-            img.width = 70;
+            img.width = 75;
             img.onclick = () => {
                 selectedTCG = c;
                 document.getElementById("selected").textContent = "Selected: " + c.name;
@@ -332,7 +360,7 @@ async function searchTCG() {
 }
 
 function addTCG() {
-    if (!selectedTCG) return;
+    if (!selectedTCG) return alert("Search and select a card first!");
     cache[document.getElementById("tcgStatus").value].push({
         name: selectedTCG.name,
         type: selectedTCG.type,
@@ -343,13 +371,20 @@ function addTCG() {
 }
 
 function addCustom() {
+    const name = document.getElementById("cName").value;
+    if(!name) return alert("Name is required");
+    
     cache[document.getElementById("cStatus").value].push({
-        name: document.getElementById("cName").value,
+        name: name,
         type: document.getElementById("cType").value,
         image: document.getElementById("cImg").value
     });
     save();
     render();
+    // Clear inputs
+    document.getElementById("cName").value = "";
+    document.getElementById("cType").value = "";
+    document.getElementById("cImg").value = "";
 }
 
 load();
