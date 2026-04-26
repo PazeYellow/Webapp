@@ -8,6 +8,7 @@
 
 <style>
 :root { --dark:#121212; --gold:#d4af37; --red:#8b0000; --card-bg:#1e1e1e; }
+
 body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px; }
 .container { max-width:1000px; margin:auto; }
 
@@ -17,18 +18,57 @@ body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px;
 .semi { border-top:5px solid gold; }
 
 .card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
-.card-item { background:#222; border-radius:6px; overflow:hidden; text-align:center; font-size:.7em; }
+
+.card-item {
+    background:#222;
+    border-radius:6px;
+    overflow:hidden;
+    text-align:center;
+    font-size:.7em;
+    position:relative;
+}
+
 .card-item img { width:100%; }
+
+.controls {
+    display:flex;
+    gap:2px;
+}
+
+.controls button {
+    flex:1;
+    font-size:10px;
+    padding:3px;
+    cursor:pointer;
+    border:none;
+}
+
+.delete { background:#8b0000; color:white; }
+.move { background:#d4af37; color:black; }
 
 .admin { display:none; background:#2a2a2a; padding:20px; border-radius:10px; margin-top:20px; }
 
 .search-results { display:flex; gap:10px; overflow-x:auto; padding:10px 0; }
-.search-card { cursor:pointer; }
-.search-card img { width:80px; border:2px solid transparent; }
+.search-card img { width:80px; cursor:pointer; border:2px solid transparent; }
 .search-card img:hover { border-color:gold; }
 
-input, select, textarea { width:100%; margin:5px 0; padding:8px; background:#333; color:white; border:1px solid #444; }
-button { background:gold; padding:10px; border:none; cursor:pointer; width:100%; margin-top:5px; }
+input, select, textarea {
+    width:100%;
+    margin:5px 0;
+    padding:8px;
+    background:#333;
+    color:white;
+    border:1px solid #444;
+}
+
+button {
+    background:gold;
+    padding:10px;
+    border:none;
+    cursor:pointer;
+    width:100%;
+    margin-top:5px;
+}
 </style>
 </head>
 
@@ -57,8 +97,8 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 
 <div id="admin" class="admin">
 
-<h2>🔍 TCG Search</h2>
-<input id="searchInput" placeholder="Search card name...">
+<h2>TCG SEARCH</h2>
+<input id="searchInput" placeholder="Search card">
 <button onclick="searchTCG()">Search</button>
 
 <div id="searchResults" class="search-results"></div>
@@ -74,7 +114,7 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 
 <hr>
 
-<h2>🛠️ Custom Card Creator</h2>
+<h2>CUSTOM CARD</h2>
 
 <input id="custName" placeholder="Name">
 <input id="custType" placeholder="Type">
@@ -94,168 +134,213 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 </div>
 
 <script>
+
 const BIN_ID = CONFIG.BIN_ID;
 const API_KEY = CONFIG.API_KEY;
 const ACCESS_KEY = CONFIG.ACCESS_KEY;
 const ADMIN_PASS = CONFIG.ADMIN_PASS;
 
 let selectedTCG = null;
+let cachedData = null;
 
-// LOAD BANLIST
+// LOAD
 async function loadBanlist() {
-    try {
-        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-            headers: {
-                "X-Master-Key": API_KEY,
-                "X-Access-Key": ACCESS_KEY
-            }
-        });
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers: {
+            "X-Master-Key": API_KEY,
+            "X-Access-Key": ACCESS_KEY
+        }
+    });
 
-        const data = await res.json();
-        console.log("LOAD:", data);
+    const data = await res.json();
+    cachedData = data.record;
 
-        render(data.record);
-
-    } catch (e) {
-        console.error("LOAD ERROR:", e);
-    }
+    render(data.record);
 }
 
 // RENDER
 function render(list) {
+
     ["forbidden","limited","semi_limited"].forEach(s => {
         if(!list[s]) list[s] = [];
 
-        const el = document.getElementById(s === "semi_limited" ? "semi-list" : s + "-list");
+        const el = document.getElementById(s==="semi_limited"?"semi-list":s+"-list");
 
-        el.innerHTML = list[s].map(c => `
+        el.innerHTML = list[s].map((c, i) => {
+
+            const id = c.id || c.name + i;
+
+            return `
             <div class="card-item">
                 <img src="${c.image || ""}">
                 <div>${c.name}</div>
+
+                <div class="controls">
+
+                    <button class="move" onclick="moveCard('${id}','${s}','forbidden')">F</button>
+                    <button class="move" onclick="moveCard('${id}','${s}','limited')">L</button>
+                    <button class="move" onclick="moveCard('${id}','${s}','semi_limited')">S</button>
+
+                    <button class="delete" onclick="deleteCard('${id}','${s}')">X</button>
+
+                </div>
             </div>
-        `).join("");
+            `;
+        }).join("");
     });
 }
 
 // LOGIN
 function login() {
     if(prompt("Password") === ADMIN_PASS){
-        document.getElementById("admin").style.display = "block";
+        document.getElementById("admin").style.display="block";
     }
 }
 
-// SEARCH TCG
+// SEARCH
 async function searchTCG() {
     const q = document.getElementById("searchInput").value;
     const box = document.getElementById("searchResults");
 
-    box.innerHTML = "Searching...";
+    box.innerHTML="...";
 
-    try {
-        const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-        const data = await res.json();
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+    const data = await res.json();
 
-        box.innerHTML = data.data.slice(0,10).map(card => `
-            <div class="search-card" onclick='selectTCG(${JSON.stringify(card).replace(/'/g,"&apos;")})'>
-                <img src="${card.card_images[0].image_url_small}">
-            </div>
-        `).join("");
-
-    } catch {
-        box.innerHTML = "No results";
-    }
+    box.innerHTML = data.data.slice(0,10).map(card => `
+        <div class="search-card" onclick='selectTCG(${JSON.stringify(card).replace(/'/g,"&apos;")})'>
+            <img src="${card.card_images[0].image_url_small}">
+        </div>
+    `).join("");
 }
 
-// SELECT CARD
-function selectTCG(card) {
+// SELECT
+function selectTCG(card){
     selectedTCG = card;
-    document.getElementById("selectedCard").innerText = "Selected: " + card.name;
+    document.getElementById("selectedCard").innerText = card.name;
 }
 
 // ADD TCG
 async function addTCG() {
-    if(!selectedTCG) return alert("Select a card first");
-
-    const status = document.getElementById("tcgStatus").value;
 
     const card = {
+        id: Date.now(),
         name: selectedTCG.name,
         type: selectedTCG.type,
         image: selectedTCG.card_images[0].image_url
     };
 
-    await push(card, status);
+    await push(card, document.getElementById("tcgStatus").value);
 }
 
-// ADD CUSTOM
+// CUSTOM
 async function addCustom() {
-    const name = document.getElementById("custName").value;
-    if(!name) return alert("Name required");
 
     const card = {
-        name,
-        type: document.getElementById("custType").value,
-        effect: document.getElementById("custEffect").value,
-        image: document.getElementById("custImg").value
+        id: Date.now(),
+        name: custName.value,
+        type: custType.value,
+        effect: custEffect.value,
+        image: custImg.value || ""
     };
 
-    const status = document.getElementById("custStatus").value;
-
-    await push(card, status);
+    await push(card, custStatus.value);
 }
 
-// PUSH TO DB (FIXED)
-async function push(card, status) {
-    try {
-        // GET CURRENT DATA
-        const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-            headers: {
-                "X-Master-Key": API_KEY,
-                "X-Access-Key": ACCESS_KEY
-            }
-        });
+// PUSH
+async function push(card,status){
 
-        const getData = await getRes.json();
-        let record = getData.record;
-
-        if (!record.forbidden) record.forbidden = [];
-        if (!record.limited) record.limited = [];
-        if (!record.semi_limited) record.semi_limited = [];
-
-        record[status].push(card);
-
-        console.log("UPDATING:", record);
-
-        // PUT UPDATE
-        const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-                "X-Master-Key": API_KEY,
-                "X-Access-Key": ACCESS_KEY,
-                "X-Bin-Versioning": "false"
-            },
-            body: JSON.stringify(record)
-        });
-
-        const text = await putRes.text();
-        console.log("PUT RESPONSE:", text);
-
-        if (!putRes.ok) {
-            alert("FAILED: " + text);
-            return;
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers:{
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
         }
+    });
 
-        alert("SUCCESS!");
-        location.reload();
+    const data = await res.json();
+    let record = data.record;
 
-    } catch (err) {
-        console.error("PUSH ERROR:", err);
-        alert("System error: " + err.message);
-    }
+    if(!record.forbidden) record.forbidden=[];
+    if(!record.limited) record.limited=[];
+    if(!record.semi_limited) record.semi_limited=[];
+
+    record[status].push(card);
+
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
+        },
+        body:JSON.stringify(record)
+    });
+
+    loadBanlist();
+}
+
+// DELETE CARD
+async function deleteCard(id,status){
+
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers:{
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
+        }
+    });
+
+    const data = await res.json();
+    let record = data.record;
+
+    record[status] = record[status].filter(c => (c.id || c.name) !== id);
+
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
+        },
+        body:JSON.stringify(record)
+    });
+
+    loadBanlist();
+}
+
+// MOVE CARD
+async function moveCard(id,from,to){
+
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers:{
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
+        }
+    });
+
+    const data = await res.json();
+    let record = data.record;
+
+    const card = record[from].find(c => (c.id || c.name) === id);
+
+    record[from] = record[from].filter(c => (c.id || c.name) !== id);
+
+    record[to].push(card);
+
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":API_KEY,
+            "X-Access-Key":ACCESS_KEY
+        },
+        body:JSON.stringify(record)
+    });
+
+    loadBanlist();
 }
 
 loadBanlist();
+
 </script>
 
 </body>
