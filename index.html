@@ -125,6 +125,19 @@ button {
 
 #results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 100px; }
 #results img:hover { border-color: #d4af37; transform: scale(1.1); }
+
+/* Small indicator for custom cards if desired, optional */
+.custom-tag {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: #d4af37;
+    color: #000;
+    font-size: 8px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
 </style>
 </head>
 
@@ -193,7 +206,7 @@ const BIN = CONFIG.BIN_ID;
 const KEY = CONFIG.API_KEY;
 const ACCESS = CONFIG.ACCESS_KEY;
 
-/* ---------------- FIXED ORDER ---------------- */
+/* ---------------- FIXED DECK BUILDER ORDER ---------------- */
 const ORDER = [
     "Normal Monsters",
     "Effect Monsters",
@@ -212,11 +225,11 @@ const DISPLAY_NAMES = {
     semi_limited: "Semi-Limited"
 };
 
-/* ---------------- FIXED TYPE ENGINE ---------------- */
+/* ---------------- ROBUST TYPE ENGINE ---------------- */
 function getCategory(card) {
     const t = (card.type || "").toLowerCase();
 
-    // Spells / Traps FIRST
+    // Spells & Traps
     if (t.includes("spell")) return "Spell Cards";
     if (t.includes("trap")) return "Trap Cards";
 
@@ -226,15 +239,23 @@ function getCategory(card) {
     if (t.includes("synchro")) return "Synchro Monsters";
     if (t.includes("fusion")) return "Fusion Monsters";
 
-    // Ritual
+    // Main Deck Rituals
     if (t.includes("ritual")) return "Ritual Monsters";
 
-    // Main Deck monsters
-    // Exclude cards that have effects so they default to Effect Monsters instead
+    // Main Deck Monsters (Normal vs Effect)
+    // If it has "normal" but NO "effect" (to prevent Pendulum Normal Effect monsters mis-sorting)
     if (t.includes("normal") && !t.includes("effect")) return "Normal Monsters";
 
-    // Default fallback for everything else (Effect, Pendulum Effect, Toon, Spirit, etc.)
+    // Everything else (Effect, Pendulum, Toon, Spirit, Gemini, Flip, Tuner) goes to Effect
     return "Effect Monsters";
+}
+
+/* ---------------- CHECK IF CUSTOM ---------------- */
+// Checks if the card is a custom card so we can sort it to the bottom
+function isCustomCard(card) {
+    if (card.isCustom) return true; // New custom cards
+    if (card.image && !card.image.includes("ygoprodeck.com")) return true; // Legacy custom cards
+    return false;
 }
 
 /* ---------------- LOAD ---------------- */
@@ -278,8 +299,18 @@ function render() {
             const list = grouped[cat];
             if (!list?.length) return;
 
-            // Sort alphabetically within the specific category
-            list.sort((a,b)=>a.name.localeCompare(b.name));
+            // DECK BUILDER SORTING: Official Alphabetical FIRST, then Custom Alphabetical LAST
+            list.sort((a, b) => {
+                const aCustom = isCustomCard(a) ? 1 : 0;
+                const bCustom = isCustomCard(b) ? 1 : 0;
+                
+                if (aCustom !== bCustom) {
+                    return aCustom - bCustom; // Official (0) comes before Custom (1)
+                }
+                
+                // If both are official or both are custom, sort alphabetically
+                return a.name.localeCompare(b.name);
+            });
 
             const wrap = document.createElement("div");
             wrap.innerHTML = `<div class="title">${cat}</div>`;
@@ -291,8 +322,11 @@ function render() {
                 const el = document.createElement("div");
                 el.className = "card";
 
+                const customBadge = isCustomCard(card) ? `<div class="custom-tag">C</div>` : '';
+
                 el.innerHTML = `
                     <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
+                    ${customBadge}
                     <div class="name">${card.name}</div>
                     <div class="controls"></div>
                 `;
@@ -422,7 +456,8 @@ function addCustom(){
     cache[document.getElementById("cStatus").value].push({
         name,
         type,
-        image:document.getElementById("cImg").value || 'https://via.placeholder.com/150x220?text=Custom+Card'
+        image:document.getElementById("cImg").value || 'https://via.placeholder.com/150x220?text=Custom+Card',
+        isCustom: true // This flag ensures it is always sorted to the bottom
     });
 
     save();render();
