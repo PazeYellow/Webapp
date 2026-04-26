@@ -3,13 +3,16 @@ name: Secure Deploy
 on:
   push:
     branches:
-      - main
+      - main  # Change this to 'master' if your main branch uses that name
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # This gives the script permission to create and update the gh-pages branch
     permissions:
       contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -24,5 +27,5 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: .
-          branch: gh-pages
+          folder: .        # Deploys the current directory
+          branch: gh-pages # This is the branch the live site will run from
