@@ -32,6 +32,7 @@ header {
     margin-bottom:40px;
     border-radius:10px;
     border: 1px solid #333;
+    transition: border 0.3s;
 }
 
 .status-header {
@@ -44,12 +45,11 @@ header {
     background: linear-gradient(90deg, #222, transparent);
 }
 
-/* Grid now acts as the sortable container */
 .grid {
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
     gap:12px;
-    min-height: 50px;
+    min-height: 100px; /* Bigger drop zone */
 }
 
 .card {
@@ -59,10 +59,8 @@ header {
     text-align:center;
     position:relative;
     border: 1px solid #333;
-    cursor: default;
 }
 
-/* Admin-only drag cursor */
 .admin-mode .card { cursor: grab; }
 .admin-mode .card:active { cursor: grabbing; }
 
@@ -82,6 +80,7 @@ header {
 .controls {
     display:none;
     background:rgba(0,0,0,0.9);
+    padding: 5px;
 }
 
 .controls button {
@@ -90,10 +89,10 @@ header {
     border:none;
     padding:5px;
     cursor:pointer;
+    border-radius: 4px;
 }
 
 .del { background:#8b0000; color:white; }
-.mv { background:#d4af37; color:black; margin-bottom:1px; }
 
 .admin { display:none; background:#111; padding:20px; border-radius:10px; margin-top:20px; border: 1px dashed #444; }
 
@@ -121,29 +120,45 @@ button {
 #results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 80px; }
 #results img:hover { border-color: #d4af37; }
 
-/* Dragging Styles */
-.sortable-ghost { opacity: 0.4; border: 2px dashed #d4af37; }
+/* Visual Feedback Toast */
+#toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #d4af37;
+    color: #000;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: bold;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.sortable-ghost { opacity: 0.2; transform: scale(0.8); }
+.sortable-chosen { border: 1px solid #d4af37; }
 </style>
 </head>
 
 <body>
 
+<div id="toast">Updating Database...</div>
 <header>YGO BANLIST SYSTEM</header>
 
 <div class="container" id="main-content">
     <div class="section">
         <div class="status-header">Forbidden</div>
-        <div id="forbidden" class="grid"></div>
+        <div id="forbidden" class="grid" data-status="forbidden"></div>
     </div>
     
     <div class="section">
         <div class="status-header">Limited</div>
-        <div id="limited" class="grid"></div>
+        <div id="limited" class="grid" data-status="limited"></div>
     </div>
 
     <div class="section">
         <div class="status-header">Semi-Limited</div>
-        <div id="semi_limited" class="grid"></div>
+        <div id="semi_limited" class="grid" data-status="semi_limited"></div>
     </div>
 
     <button onclick="login()">ADMIN LOGIN</button>
@@ -166,7 +181,7 @@ button {
 
         <h3>CUSTOM CARD</h3>
         <input id="cName" placeholder="Card Name">
-        <input id="cType" placeholder="Card Type (e.g. Spell, Fusion, etc)">
+        <input id="cType" placeholder="Card Type">
         <input id="cImg" placeholder="Image URL">
 
         <select id="cStatus">
@@ -189,7 +204,13 @@ const BIN = CONFIG.BIN_ID;
 const KEY = CONFIG.API_KEY;
 const ACCESS = CONFIG.ACCESS_KEY;
 
-/* ---------------- LOAD ---------------- */
+function showToast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 1500);
+}
+
 async function load() {
     const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
         headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
@@ -206,9 +227,7 @@ function ensure() {
     });
 }
 
-/* ---------------- RENDER ---------------- */
 function render() {
-    // Clear existing sortable instances to prevent memory leaks
     sortables.forEach(s => s.destroy());
     sortables = [];
 
@@ -219,31 +238,30 @@ function render() {
         cache[zone].forEach((card, index) => {
             const el = document.createElement("div");
             el.className = "card";
-            el.dataset.id = index; // Keep track of original index
+            // Store unique data to identify card during removal/drag
+            el.dataset.name = card.name;
+            el.dataset.img = card.image;
+            el.dataset.type = card.type;
 
             el.innerHTML = `
                 <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
                 <div class="name">${card.name}</div>
-                <div class="controls" id="ctrl-${zone}-${index}">
-                    <button class="mv" onclick="moveStatus('${zone}', ${index})">Move Status</button>
-                    <button class="del" onclick="removeCard('${zone}', ${index})">Remove</button>
+                <div class="controls">
+                    <button class="del" onclick="removeCard(this)">Remove</button>
                 </div>
             `;
 
-            if (admin) {
-                el.querySelector(".controls").style.display = "block";
-            }
-
+            if (admin) el.querySelector(".controls").style.display = "block";
             grid.appendChild(el);
         });
 
-        // Initialize Drag and Drop if Admin
         if (admin) {
             sortables.push(new Sortable(grid, {
+                group: 'banlist', // This allows dragging between lists
                 animation: 150,
                 ghostClass: 'sortable-ghost',
                 onEnd: () => {
-                    updateCacheFromDOM(zone);
+                    syncAllLists();
                 }
             }));
         }
@@ -252,44 +270,36 @@ function render() {
     if(admin) document.getElementById("main-content").classList.add("admin-mode");
 }
 
-/* ---------------- MANUAL SORT UPDATE ---------------- */
-function updateCacheFromDOM(zone) {
-    const grid = document.getElementById(zone);
-    const newOrder = [];
-    const items = grid.querySelectorAll('.card');
-    
-    // Create a temporary copy of the zone
-    const currentZoneCards = [...cache[zone]];
-    
-    items.forEach(item => {
-        const name = item.querySelector('.name').textContent;
-        // Find the matching card object by name (or we could use a unique ID)
-        const cardObj = currentZoneCards.find(c => c.name === name);
-        if(cardObj) newOrder.push(cardObj);
+/* ---------------- SYNC LOGIC ---------------- */
+// Reads the entire DOM and updates the cache object to match exactly what you see
+function syncAllLists() {
+    const statuses = ["forbidden", "limited", "semi_limited"];
+    statuses.forEach(status => {
+        const grid = document.getElementById(status);
+        const cards = grid.querySelectorAll('.card');
+        const newList = [];
+        
+        cards.forEach(cardEl => {
+            newList.push({
+                name: cardEl.dataset.name,
+                image: cardEl.dataset.img,
+                type: cardEl.dataset.type
+            });
+        });
+        cache[status] = newList;
     });
-
-    cache[zone] = newOrder;
     save();
 }
 
-/* ---------------- ACTIONS ---------------- */
-function moveStatus(zone, index) {
-    const order = ["forbidden","limited","semi_limited"];
-    const next = order[(order.indexOf(zone)+1)%3];
-    const card = cache[zone].splice(index, 1)[0];
-    cache[next].push(card);
-    save();
-    render();
-}
-
-function removeCard(zone, index) {
-    if(!confirm("Remove this card?")) return;
-    cache[zone].splice(index, 1);
-    save();
-    render();
+function removeCard(btn) {
+    const cardEl = btn.closest('.card');
+    cardEl.remove();
+    syncAllLists();
+    showToast("Card Removed");
 }
 
 async function save() {
+    showToast("Saving Changes...");
     await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
         method:"PUT",
         headers:{
@@ -301,17 +311,16 @@ async function save() {
     });
 }
 
-/* ---------------- ADMIN ---------------- */
 function login(){
     const pass = prompt("Admin Password");
     if(pass === CONFIG.ADMIN_PASS){
         admin = true;
         document.getElementById("admin-panel").style.display="block";
         render();
+        showToast("Admin Logged In");
     }
 }
 
-/* ---------------- API ---------------- */
 async function searchTCG(){
     const q = document.getElementById("searchInput").value;
     const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
@@ -333,7 +342,7 @@ async function searchTCG(){
 function addTCG(){
     if(!selectedTCG) return alert("Select card");
     const status = document.getElementById("tcgStatus").value;
-    cache[status].push({
+    cache[status].unshift({ // Adds to start of list
         name:selectedTCG.name,
         type:selectedTCG.type,
         image:selectedTCG.card_images[0].image_url
@@ -345,7 +354,7 @@ function addCustom(){
     const name=document.getElementById("cName").value;
     if(!name) return;
     const status = document.getElementById("cStatus").value;
-    cache[status].push({
+    cache[status].unshift({
         name,
         type:document.getElementById("cType").value,
         image:document.getElementById("cImg").value
