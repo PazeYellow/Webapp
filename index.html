@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Banlist System - Smooth Drag</title>
+<title>Banlist System - Manual Sort</title>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
@@ -59,7 +59,6 @@ header {
     text-align:center;
     position:relative;
     border: 1px solid #333;
-    /* Prevent text selection during drag */
     user-select: none;
     -webkit-user-drag: none;
 }
@@ -70,7 +69,7 @@ header {
 .card img { 
     width:100%; 
     display: block; 
-    pointer-events: none; /* Critical for smooth dragging */
+    pointer-events: none; 
 }
 
 .name {
@@ -102,7 +101,6 @@ header {
     border: 2px solid #ff4d4d;
 }
 
-/* Toast */
 #toast {
     position: fixed;
     top: 20px;
@@ -140,7 +138,6 @@ button {
 
 #results img { margin: 5px; cursor: pointer; height: 80px; }
 
-/* Sortable Styles */
 .sortable-fallback {
     opacity: 0.9 !important;
     box-shadow: 0 10px 20px rgba(0,0,0,0.5);
@@ -181,7 +178,7 @@ button {
         <input id="searchInput" placeholder="Search card name...">
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
-        <p id="selected"></p>
+        <p id="selected" style="color:#d4af37; font-weight:bold; margin-top:10px;"></p>
 
         <select id="tcgStatus">
             <option value="forbidden">Forbidden</option>
@@ -252,7 +249,7 @@ function render() {
             sortables.push(new Sortable(grid, {
                 group: 'banlist',
                 animation: 200,
-                forceFallback: true, // This makes dragging much more consistent
+                forceFallback: true, 
                 fallbackOnBody: true,
                 swapThreshold: 0.65,
                 ghostClass: 'sortable-ghost',
@@ -320,7 +317,9 @@ async function searchTCG(){
     const results = document.getElementById("results");
     results.innerHTML="";
 
-    data.data?.slice(0,10).forEach(c=>{
+    if(!data.data) return;
+
+    data.data.slice(0,10).forEach(c=>{
         const img=document.createElement("img");
         img.src=c.card_images[0].image_url_small;
         img.onclick=()=>{
@@ -334,12 +333,16 @@ async function searchTCG(){
 function addTCG(){
     if(!selectedTCG) return alert("Select card");
     const status = document.getElementById("tcgStatus").value;
-    cache[status].unshift({
+    
+    // Uses .push to add to the bottom of the array
+    cache[status].push({
         name:selectedTCG.name,
         type:selectedTCG.type,
         image:selectedTCG.card_images[0].image_url
     });
-    save(); render();
+    
+    save(); 
+    render();
 }
 
 load();
