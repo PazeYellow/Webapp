@@ -1,6 +1,28 @@
+name: Secure Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Inject Secrets into config.js
         run: |
-          sed -i "s/REPLACE_BIN_ID/${{ secrets.BIN_ID }}/g" config.js
+          sed -i "s|REPLACE_BIN_ID|${{ secrets.BIN_ID }}|g" config.js
           sed -i "s|REPLACE_API_KEY|${{ secrets.API_KEY }}|g" config.js
           sed -i "s|REPLACE_ACCESS_KEY|${{ secrets.ACCESS_KEY }}|g" config.js
-          sed -i "s/REPLACE_ADMIN_PASS/${{ secrets.ADMIN_PASS }}/g" config.js
+          sed -i "s|REPLACE_ADMIN_PASS|${{ secrets.ADMIN_PASS }}|g" config.js
+
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: .
+          branch: gh-pages
