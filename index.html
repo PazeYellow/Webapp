@@ -3,26 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YGO Custom Banlist Manager</title>
+<title>YGO Banlist Manager</title>
 <script src="config.js"></script>
 
 <style>
 :root { --dark:#121212; --gold:#d4af37; --red:#8b0000; --card-bg:#1e1e1e; }
-body { font-family:'Segoe UI'; background:var(--dark); color:#eee; margin:0; padding:10px; }
-.container { max-width:900px; margin:auto; }
+body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px; }
+.container { max-width:1000px; margin:auto; }
 
-.section { background:var(--card-bg); padding:15px; border-radius:12px; margin-bottom:25px; }
-.forbidden { border-top:5px solid var(--red); }
+.section { background:var(--card-bg); padding:15px; margin-bottom:20px; border-radius:10px; }
+.forbidden { border-top:5px solid red; }
 .limited { border-top:5px solid orange; }
-.semi { border-top:5px solid var(--gold); }
+.semi { border-top:5px solid gold; }
 
-.card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:10px; }
-.card-item { background:#252525; border-radius:5px; text-align:center; font-size:.75em; }
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
+.card-item { background:#222; border-radius:6px; overflow:hidden; text-align:center; font-size:.7em; }
 .card-item img { width:100%; }
 
-.admin-panel { display:none; background:#2a2a2a; padding:20px; margin-top:30px; }
-button { background:var(--gold); padding:10px; border:none; cursor:pointer; width:100%; }
-.login-btn { margin-top:30px; opacity:.3; background:none; border:1px solid #444; color:white; }
+.admin { display:none; background:#2a2a2a; padding:20px; border-radius:10px; margin-top:20px; }
+
+.search-results { display:flex; gap:10px; overflow-x:auto; padding:10px 0; }
+.search-card { cursor:pointer; }
+.search-card img { width:80px; border:2px solid transparent; }
+.search-card img:hover { border-color:gold; }
+
+input, select, textarea { width:100%; margin:5px 0; padding:8px; background:#333; color:white; border:1px solid #444; }
+button { background:gold; padding:10px; border:none; cursor:pointer; width:100%; margin-top:5px; }
+
 </style>
 </head>
 
@@ -30,27 +37,60 @@ button { background:var(--gold); padding:10px; border:none; cursor:pointer; widt
 
 <div class="container">
 
-<h1 style="text-align:center;color:var(--gold)">SYSTEM BANLIST</h1>
+<h1 style="text-align:center;color:gold;">SYSTEM BANLIST</h1>
 
-<div id="banlist-content">
-<div class="section forbidden"><h2>Forbidden <span id="count-forbidden"></span></h2><div id="forbidden-list" class="card-grid"></div></div>
-<div class="section limited"><h2>Limited <span id="count-limited"></span></h2><div id="limited-list" class="card-grid"></div></div>
-<div class="section semi"><h2>Semi-Limited <span id="count-semi"></span></h2><div id="semi-list" class="card-grid"></div></div>
+<div class="section forbidden">
+<h2>Forbidden</h2>
+<div id="forbidden-list" class="card-grid"></div>
 </div>
 
-<button class="login-btn" onclick="showLogin()">[ADMIN LOGIN]</button>
+<div class="section limited">
+<h2>Limited</h2>
+<div id="limited-list" class="card-grid"></div>
+</div>
 
-<div id="admin-area" class="admin-panel">
-<h2>Database Editor</h2>
+<div class="section semi">
+<h2>Semi-Limited</h2>
+<div id="semi-list" class="card-grid"></div>
+</div>
 
-<input id="custName" placeholder="Card Name">
+<button onclick="login()">ADMIN LOGIN</button>
+
+<div id="admin" class="admin">
+
+<h2>🔍 TCG Search</h2>
+<input id="searchInput" placeholder="Search card name...">
+<button onclick="searchTCG()">Search</button>
+
+<div id="searchResults" class="search-results"></div>
+
+<p id="selectedCard"></p>
+
+<select id="tcgStatus">
+<option value="forbidden">Forbidden</option>
+<option value="limited">Limited</option>
+<option value="semi_limited">Semi-Limited</option>
+</select>
+
+<button onclick="addTCG()">Add Official Card</button>
+
+<hr>
+
+<h2>🛠️ Custom Card Creator</h2>
+
+<input id="custName" placeholder="Name">
+<input id="custType" placeholder="Type (Dragon / Spell / etc)">
+<textarea id="custEffect" placeholder="Effect"></textarea>
+<input id="custImg" placeholder="Image URL (optional)">
+
 <select id="custStatus">
 <option value="forbidden">Forbidden</option>
 <option value="limited">Limited</option>
 <option value="semi_limited">Semi-Limited</option>
 </select>
 
-<button onclick="addCustom()">Add Card</button>
+<button onclick="addCustom()">Add Custom Card</button>
+
 </div>
 
 </div>
@@ -60,106 +100,135 @@ const BIN_ID = CONFIG.BIN_ID;
 const API_KEY = CONFIG.API_KEY;
 const ADMIN_PASS = CONFIG.ADMIN_PASS;
 
+let selectedTCG = null;
+
+// LOAD
 async function loadBanlist() {
-    try {
-        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-            headers: {
-                'X-Master-Key': API_KEY
-            }
-        });
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers: { "X-Master-Key": API_KEY }
+    });
 
-        const data = await res.json();
-        renderList(data.record);
-
-    } catch (e) {
-        console.error(e);
-    }
+    const data = await res.json();
+    render(data.record);
 }
 
-function renderList(list) {
-    ["forbidden","limited","semi_limited"].forEach(status => {
-        const id = status === "semi_limited" ? "semi-list" : status + "-list";
-        const el = document.getElementById(id);
+function render(list) {
+    ["forbidden","limited","semi_limited"].forEach(s => {
+        if(!list[s]) list[s]=[];
 
-        if (!list[status]) list[status] = [];
+        const el = document.getElementById(s==="semi_limited"?"semi-list":s+"-list");
 
-        el.innerHTML = list[status].map(c => `
+        el.innerHTML = list[s].map(c => `
             <div class="card-item">
-                <img src="${c.image || ''}">
+                <img src="${c.image || ""}">
                 <div>${c.name}</div>
             </div>
         `).join("");
     });
 }
 
-async function addCustom() {
-    const name = document.getElementById("custName").value;
-    const status = document.getElementById("custStatus").value;
+// LOGIN
+function login() {
+    if(prompt("Password")===ADMIN_PASS){
+        document.getElementById("admin").style.display="block";
+    }
+}
 
-    if (!name) return alert("Name required");
+// SEARCH TCG
+async function searchTCG() {
+    const q = document.getElementById("searchInput").value;
+    const box = document.getElementById("searchResults");
+
+    box.innerHTML="Searching...";
+
+    try {
+        const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+        const data = await res.json();
+
+        box.innerHTML = data.data.slice(0,10).map(card => `
+            <div class="search-card" onclick='selectTCG(${JSON.stringify(card).replace(/'/g,"&apos;")})'>
+                <img src="${card.card_images[0].image_url_small}">
+            </div>
+        `).join("");
+
+    } catch {
+        box.innerHTML="No results";
+    }
+}
+
+// SELECT
+function selectTCG(card) {
+    selectedTCG = card;
+    document.getElementById("selectedCard").innerText = "Selected: " + card.name;
+}
+
+// ADD TCG
+async function addTCG() {
+    if(!selectedTCG) return alert("Select a card");
+
+    const status = document.getElementById("tcgStatus").value;
 
     const card = {
-        name: name,
-        image: ""
+        name: selectedTCG.name,
+        type: selectedTCG.type,
+        image: selectedTCG.card_images[0].image_url
     };
 
-    await pushToDB(card, status);
+    await push(card, status);
 }
 
-async function pushToDB(cardObj, status) {
-    try {
-        // GET CURRENT DATA
-        const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-            headers: {
-                'X-Master-Key': API_KEY
-            }
-        });
+// CUSTOM
+async function addCustom() {
+    const name = document.getElementById("custName").value;
+    if(!name) return alert("Name needed");
 
-        const getData = await getRes.json();
-        let record = getData.record;
+    const card = {
+        name,
+        type: document.getElementById("custType").value,
+        effect: document.getElementById("custEffect").value,
+        image: document.getElementById("custImg").value
+    };
 
-        // ENSURE STRUCTURE
-        if (!record.forbidden) record.forbidden = [];
-        if (!record.limited) record.limited = [];
-        if (!record.semi_limited) record.semi_limited = [];
+    const status = document.getElementById("custStatus").value;
 
-        // ADD CARD
-        record[status].push(cardObj);
-
-        console.log("UPDATING:", record);
-
-        // PUT UPDATE
-        const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-                "X-Master-Key": API_KEY,
-                "X-Bin-Versioning": "false"
-            },
-            body: JSON.stringify(record)
-        });
-
-        const result = await putRes.json();
-        console.log("RESULT:", result);
-
-        if (!putRes.ok) {
-            alert("ERROR: " + result.message);
-            return;
-        }
-
-        alert("Updated!");
-        location.reload();
-
-    } catch (err) {
-        console.error(err);
-        alert("System error");
-    }
+    await push(card, status);
 }
 
-function showLogin() {
-    if (prompt("Password?") === ADMIN_PASS) {
-        document.getElementById("admin-area").style.display = "block";
+// PUSH DB
+async function push(card, status) {
+
+    const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+        headers: { "X-Master-Key": API_KEY }
+    });
+
+    const data = await getRes.json();
+    let record = data.record;
+
+    if(!record.forbidden) record.forbidden=[];
+    if(!record.limited) record.limited=[];
+    if(!record.semi_limited) record.semi_limited=[];
+
+    record[status].push(card);
+
+    const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":API_KEY,
+            "X-Bin-Versioning":"false"
+        },
+        body:JSON.stringify(record)
+    });
+
+    const result = await putRes.json();
+
+    if(!putRes.ok){
+        alert(result.message);
+        return;
     }
+
+    alert("Added!");
+    location.reload();
 }
 
 loadBanlist();
