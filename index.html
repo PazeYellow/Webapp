@@ -29,7 +29,6 @@ body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px;
 
 input, select, textarea { width:100%; margin:5px 0; padding:8px; background:#333; color:white; border:1px solid #444; }
 button { background:gold; padding:10px; border:none; cursor:pointer; width:100%; margin-top:5px; }
-
 </style>
 </head>
 
@@ -63,7 +62,6 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 <button onclick="searchTCG()">Search</button>
 
 <div id="searchResults" class="search-results"></div>
-
 <p id="selectedCard"></p>
 
 <select id="tcgStatus">
@@ -79,7 +77,7 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 <h2>🛠️ Custom Card Creator</h2>
 
 <input id="custName" placeholder="Name">
-<input id="custType" placeholder="Type (Dragon / Spell / etc)">
+<input id="custType" placeholder="Type">
 <textarea id="custEffect" placeholder="Effect"></textarea>
 <input id="custImg" placeholder="Image URL (optional)">
 
@@ -98,25 +96,37 @@ button { background:gold; padding:10px; border:none; cursor:pointer; width:100%;
 <script>
 const BIN_ID = CONFIG.BIN_ID;
 const API_KEY = CONFIG.API_KEY;
+const ACCESS_KEY = CONFIG.ACCESS_KEY;
 const ADMIN_PASS = CONFIG.ADMIN_PASS;
 
 let selectedTCG = null;
 
-// LOAD
+// LOAD BANLIST
 async function loadBanlist() {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-        headers: { "X-Master-Key": API_KEY }
-    });
+    try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: {
+                "X-Master-Key": API_KEY,
+                "X-Access-Key": ACCESS_KEY
+            }
+        });
 
-    const data = await res.json();
-    render(data.record);
+        const data = await res.json();
+        console.log("LOAD:", data);
+
+        render(data.record);
+
+    } catch (e) {
+        console.error("LOAD ERROR:", e);
+    }
 }
 
+// RENDER
 function render(list) {
     ["forbidden","limited","semi_limited"].forEach(s => {
-        if(!list[s]) list[s]=[];
+        if(!list[s]) list[s] = [];
 
-        const el = document.getElementById(s==="semi_limited"?"semi-list":s+"-list");
+        const el = document.getElementById(s === "semi_limited" ? "semi-list" : s + "-list");
 
         el.innerHTML = list[s].map(c => `
             <div class="card-item">
@@ -129,8 +139,8 @@ function render(list) {
 
 // LOGIN
 function login() {
-    if(prompt("Password")===ADMIN_PASS){
-        document.getElementById("admin").style.display="block";
+    if(prompt("Password") === ADMIN_PASS){
+        document.getElementById("admin").style.display = "block";
     }
 }
 
@@ -139,7 +149,7 @@ async function searchTCG() {
     const q = document.getElementById("searchInput").value;
     const box = document.getElementById("searchResults");
 
-    box.innerHTML="Searching...";
+    box.innerHTML = "Searching...";
 
     try {
         const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
@@ -152,11 +162,11 @@ async function searchTCG() {
         `).join("");
 
     } catch {
-        box.innerHTML="No results";
+        box.innerHTML = "No results";
     }
 }
 
-// SELECT
+// SELECT CARD
 function selectTCG(card) {
     selectedTCG = card;
     document.getElementById("selectedCard").innerText = "Selected: " + card.name;
@@ -164,7 +174,7 @@ function selectTCG(card) {
 
 // ADD TCG
 async function addTCG() {
-    if(!selectedTCG) return alert("Select a card");
+    if(!selectedTCG) return alert("Select a card first");
 
     const status = document.getElementById("tcgStatus").value;
 
@@ -177,10 +187,10 @@ async function addTCG() {
     await push(card, status);
 }
 
-// CUSTOM
+// ADD CUSTOM
 async function addCustom() {
     const name = document.getElementById("custName").value;
-    if(!name) return alert("Name needed");
+    if(!name) return alert("Name required");
 
     const card = {
         name,
@@ -194,41 +204,55 @@ async function addCustom() {
     await push(card, status);
 }
 
-// PUSH DB
+// PUSH TO DB (FIXED)
 async function push(card, status) {
+    try {
+        // GET CURRENT DATA
+        const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: {
+                "X-Master-Key": API_KEY,
+                "X-Access-Key": ACCESS_KEY
+            }
+        });
 
-    const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-        headers: { "X-Master-Key": API_KEY }
-    });
+        const getData = await getRes.json();
+        let record = getData.record;
 
-    const data = await getRes.json();
-    let record = data.record;
+        if (!record.forbidden) record.forbidden = [];
+        if (!record.limited) record.limited = [];
+        if (!record.semi_limited) record.semi_limited = [];
 
-    if(!record.forbidden) record.forbidden=[];
-    if(!record.limited) record.limited=[];
-    if(!record.semi_limited) record.semi_limited=[];
+        record[status].push(card);
 
-    record[status].push(card);
+        console.log("UPDATING:", record);
 
-    const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-        method:"PUT",
-        headers:{
-            "Content-Type":"application/json",
-            "X-Master-Key":API_KEY,
-            "X-Bin-Versioning":"false"
-        },
-        body:JSON.stringify(record)
-    });
+        // PUT UPDATE
+        const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Master-Key": API_KEY,
+                "X-Access-Key": ACCESS_KEY,
+                "X-Bin-Versioning": "false"
+            },
+            body: JSON.stringify(record)
+        });
 
-    const result = await putRes.json();
+        const text = await putRes.text();
+        console.log("PUT RESPONSE:", text);
 
-    if(!putRes.ok){
-        alert(result.message);
-        return;
+        if (!putRes.ok) {
+            alert("FAILED: " + text);
+            return;
+        }
+
+        alert("SUCCESS!");
+        location.reload();
+
+    } catch (err) {
+        console.error("PUSH ERROR:", err);
+        alert("System error: " + err.message);
     }
-
-    alert("Added!");
-    location.reload();
 }
 
 loadBanlist();
