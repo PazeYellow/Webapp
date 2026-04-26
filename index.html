@@ -7,69 +7,43 @@
 <script src="config.js"></script>
 
 <style>
-:root { --dark:#121212; --gold:#d4af37; --red:#8b0000; --card-bg:#1e1e1e; }
-
-body { font-family:Segoe UI; background:var(--dark); color:#eee; padding:10px; }
+body { font-family:Segoe UI; background:#121212; color:#eee; padding:10px; }
 .container { max-width:1000px; margin:auto; }
 
-.section { background:var(--card-bg); padding:15px; margin-bottom:20px; border-radius:10px; }
-.forbidden { border-top:5px solid red; }
-.limited { border-top:5px solid orange; }
-.semi { border-top:5px solid gold; }
+.section { background:#1e1e1e; padding:15px; margin-bottom:20px; border-radius:10px; }
 
 .card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px; }
 
-.card-item {
+.card {
     background:#222;
     border-radius:6px;
     overflow:hidden;
     text-align:center;
     font-size:.7em;
+    position:relative;
 }
 
-.card-item img { width:100%; }
+.card img { width:100%; }
 
 .controls {
-    display:none;
+    display:flex;
     flex-direction:column;
-    gap:2px;
-    padding:4px;
-}
-
-.controls button {
-    font-size:10px;
-    padding:3px;
-    border:none;
-    cursor:pointer;
-}
-
-.delete { background:#8b0000; color:white; }
-.move { background:#d4af37; color:black; }
-
-.admin { display:none; background:#2a2a2a; padding:20px; border-radius:10px; margin-top:20px; }
-
-.search-results { display:flex; gap:10px; overflow-x:auto; padding:10px 0; }
-
-.search-card img { width:80px; cursor:pointer; border:2px solid transparent; }
-.search-card img:hover { border-color:gold; }
-
-input, select, textarea {
-    width:100%;
-    margin:5px 0;
-    padding:8px;
-    background:#333;
-    color:white;
-    border:1px solid #444;
+    gap:3px;
+    padding:5px;
 }
 
 button {
-    background:gold;
-    padding:10px;
-    border:none;
     cursor:pointer;
-    width:100%;
-    margin-top:5px;
+    border:none;
+    padding:5px;
+    font-size:10px;
 }
+
+.del { background:#8b0000; color:white; }
+.mv { background:#d4af37; }
+.admin { display:none; background:#2a2a2a; padding:20px; margin-top:20px; }
+
+input,select,textarea { width:100%; margin:5px 0; padding:8px; background:#333; color:white; }
 </style>
 </head>
 
@@ -77,59 +51,41 @@ button {
 
 <div class="container">
 
-<h1 style="text-align:center;color:gold;">SYSTEM BANLIST</h1>
+<h1 style="color:gold;text-align:center;">BANLIST SYSTEM</h1>
 
-<div class="section forbidden">
+<div class="section">
 <h2>Forbidden</h2>
-<div id="forbidden-list" class="card-grid"></div>
+<div id="forbidden" class="card-grid"></div>
 </div>
 
-<div class="section limited">
+<div class="section">
 <h2>Limited</h2>
-<div id="limited-list" class="card-grid"></div>
+<div id="limited" class="card-grid"></div>
 </div>
 
-<div class="section semi">
+<div class="section">
 <h2>Semi-Limited</h2>
-<div id="semi-list" class="card-grid"></div>
+<div id="semi_limited" class="card-grid"></div>
 </div>
 
 <button onclick="login()">ADMIN LOGIN</button>
 
 <div id="admin" class="admin">
 
-<h2>TCG SEARCH</h2>
-<input id="searchInput" placeholder="Search card">
-<button onclick="searchTCG()">Search</button>
+<h2>Add Custom Card</h2>
 
-<div id="searchResults" class="search-results"></div>
+<input id="name" placeholder="Name">
+<input id="type" placeholder="Type">
+<textarea id="effect" placeholder="Effect"></textarea>
+<input id="img" placeholder="Image URL">
 
-<p id="selectedCard"></p>
-
-<select id="tcgStatus">
+<select id="status">
 <option value="forbidden">Forbidden</option>
 <option value="limited">Limited</option>
 <option value="semi_limited">Semi-Limited</option>
 </select>
 
-<button onclick="addTCG()">Add Official Card</button>
-
-<hr>
-
-<h2>CUSTOM CARD</h2>
-
-<input id="custName" placeholder="Name">
-<input id="custType" placeholder="Type">
-<textarea id="custEffect" placeholder="Effect"></textarea>
-<input id="custImg" placeholder="Image URL">
-
-<select id="custStatus">
-<option value="forbidden">Forbidden</option>
-<option value="limited">Limited</option>
-<option value="semi_limited">Semi-Limited</option>
-</select>
-
-<button onclick="addCustom()">Add Custom Card</button>
+<button onclick="addCard()">Add</button>
 
 </div>
 
@@ -137,90 +93,124 @@ button {
 
 <script>
 
-let recordCache = null;
+let dataCache = null;
 let isAdmin = false;
-let selectedTCG = null;
 
-const BIN_ID = CONFIG.BIN_ID;
-const API_KEY = CONFIG.API_KEY;
-const ACCESS_KEY = CONFIG.ACCESS_KEY;
-
-// ---------------- LOAD ONCE ----------------
-async function loadBanlist() {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+// LOAD
+async function load() {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.BIN_ID}/latest`, {
         headers: {
-            "X-Master-Key": API_KEY,
-            "X-Access-Key": ACCESS_KEY
+            "X-Master-Key": CONFIG.API_KEY,
+            "X-Access-Key": CONFIG.ACCESS_KEY
         }
     });
 
-    const data = await res.json();
-    recordCache = data.record;
+    const json = await res.json();
+    dataCache = json.record;
 
     sanitize();
     render();
 }
 
-// ---------------- CLEAN DATA ----------------
-function sanitize() {
-    ["forbidden","limited","semi_limited"].forEach(k => {
-        if (!Array.isArray(recordCache[k])) recordCache[k] = [];
-
-        // remove null / broken entries
-        recordCache[k] = recordCache[k].filter(c => c && c.name);
+// CLEAN DATA
+function sanitize(){
+    ["forbidden","limited","semi_limited"].forEach(k=>{
+        if(!Array.isArray(dataCache[k])) dataCache[k]=[];
+        dataCache[k] = dataCache[k].filter(Boolean);
     });
 }
 
-// ---------------- SAVE ----------------
-function saveToBin() {
-    fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-            "X-Master-Key": API_KEY,
-            "X-Access-Key": ACCESS_KEY
+// SAVE
+async function save(){
+    await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.BIN_ID}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":CONFIG.API_KEY,
+            "X-Access-Key":CONFIG.ACCESS_KEY
         },
-        body: JSON.stringify(recordCache)
-    }).catch(console.error);
-}
-
-// ---------------- RENDER ----------------
-function render() {
-
-    ["forbidden","limited","semi_limited"].forEach(s => {
-
-        const el = document.getElementById(
-            s === "semi_limited" ? "semi-list" : s + "-list"
-        );
-
-        el.innerHTML = recordCache[s].map((c,i) => {
-
-            const id = c.id || (c.name + i);
-
-            return `
-            <div class="card-item">
-
-                <img src="${c.image || ""}">
-                <div>${c.name}</div>
-
-                <div class="controls" style="display:${isAdmin ? "flex":"none"}">
-
-                    <button class="move" onclick="moveCard('${id}','${s}','forbidden')">F</button>
-                    <button class="move" onclick="moveCard('${id}','${s}','limited')">L</button>
-                    <button class="move" onclick="moveCard('${id}','${s}','semi_limited')">S</button>
-
-                    <button class="delete" onclick="deleteCard('${id}','${s}')">X</button>
-
-                </div>
-
-            </div>
-            `;
-        }).join("");
+        body:JSON.stringify(dataCache)
     });
 }
 
-// ---------------- LOGIN ----------------
-function login() {
+// RENDER (WITH EVENT LISTENERS)
+function render(){
+
+    ["forbidden","limited","semi_limited"].forEach(listName=>{
+
+        const el = document.getElementById(listName);
+        el.innerHTML = "";
+
+        dataCache[listName].forEach(card=>{
+
+            const div = document.createElement("div");
+            div.className = "card";
+
+            div.innerHTML = `
+                <img src="${card.image || ""}">
+                <div>${card.name}</div>
+            `;
+
+            if(isAdmin){
+
+                const controls = document.createElement("div");
+                controls.className="controls";
+
+                const del = document.createElement("button");
+                del.className="del";
+                del.textContent="DELETE";
+
+                del.onclick = async () => {
+                    dataCache[listName] = dataCache[listName].filter(c => c.id !== card.id);
+                    sanitize();
+                    await save();
+                    render();
+                };
+
+                const moveF = document.createElement("button");
+                moveF.className="mv";
+                moveF.textContent="→ F";
+
+                moveF.onclick = () => move(card,listName,"forbidden");
+
+                const moveL = document.createElement("button");
+                moveL.className="mv";
+                moveL.textContent="→ L";
+
+                moveL.onclick = () => move(card,listName,"limited");
+
+                const moveS = document.createElement("button");
+                moveS.className="mv";
+                moveS.textContent="→ S";
+
+                moveS.onclick = () => move(card,listName,"semi_limited");
+
+                controls.appendChild(moveF);
+                controls.appendChild(moveL);
+                controls.appendChild(moveS);
+                controls.appendChild(del);
+
+                div.appendChild(controls);
+            }
+
+            el.appendChild(div);
+        });
+    });
+}
+
+// MOVE
+async function move(card,from,to){
+
+    dataCache[from] = dataCache[from].filter(c=>c.id!==card.id);
+    dataCache[to].push(card);
+
+    sanitize();
+    await save();
+    render();
+}
+
+// LOGIN
+function login(){
     if(prompt("Password") === CONFIG.ADMIN_PASS){
         isAdmin = true;
         document.getElementById("admin").style.display="block";
@@ -228,92 +218,25 @@ function login() {
     }
 }
 
-// ---------------- DELETE (SAFE) ----------------
-function deleteCard(id,status){
-
-    recordCache[status] = recordCache[status]
-        .filter(c => (c.id || c.name) !== id)
-        .filter(Boolean); // IMPORTANT CLEAN
-
-    sanitize();
-    saveToBin();
-    render();
-}
-
-// ---------------- MOVE (SAFE) ----------------
-function moveCard(id,from,to){
-
-    const index = recordCache[from].findIndex(c => (c.id || c.name) === id);
-
-    if(index === -1) return;
-
-    const card = recordCache[from][index];
-
-    recordCache[from].splice(index,1); // SAFE remove (no null holes)
-
-    recordCache[to].push(card);
-
-    sanitize();
-    saveToBin();
-    render();
-}
-
-// ---------------- ADD ----------------
-function addCustom(){
+// ADD CARD
+async function addCard(){
 
     const card = {
-        id: Date.now(),
-        name: custName.value,
-        type: custType.value,
-        effect: custEffect.value,
-        image: custImg.value || ""
+        id: crypto.randomUUID(),
+        name: name.value,
+        type: type.value,
+        effect: effect.value,
+        image: img.value
     };
 
-    recordCache[custStatus.value].push(card);
+    dataCache[status.value].push(card);
 
     sanitize();
-    saveToBin();
+    await save();
     render();
 }
 
-// ---------------- TCG SEARCH ----------------
-async function searchTCG(){
-
-    const q = searchInput.value;
-
-    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-    const data = await res.json();
-
-    searchResults.innerHTML = data.data.slice(0,10).map(card => `
-        <div onclick='selectTCG(${JSON.stringify(card)})'>
-            <img width="80" src="${card.card_images[0].image_url_small}">
-        </div>
-    `).join("");
-}
-
-function selectTCG(card){
-    selectedTCG = card;
-    selectedCard.innerText = card.name;
-}
-
-// ---------------- ADD TCG ----------------
-function addTCG(){
-
-    const card = {
-        id: Date.now(),
-        name: selectedTCG.name,
-        type: selectedTCG.type,
-        image: selectedTCG.card_images[0].image_url
-    };
-
-    recordCache[tcgStatus.value].push(card);
-
-    sanitize();
-    saveToBin();
-    render();
-}
-
-loadBanlist();
+load();
 
 </script>
 
