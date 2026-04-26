@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Banlist System - Manual Sort</title>
-<script src="config.js"></script>
+
+<script>document.write('<script src="config.js?v=' + new Date().getTime() + '"><\/script>');</script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
 <style>
@@ -207,9 +208,14 @@ let admin = false;
 let selectedTCG = null;
 let sortables = [];
 
-const BIN = CONFIG.BIN_ID;
-const KEY = CONFIG.API_KEY;
-const ACCESS = CONFIG.ACCESS_KEY;
+// Wait for CONFIG to load via the dynamic script tag
+window.onload = () => {
+    if (typeof CONFIG !== 'undefined') {
+        load();
+    } else {
+        alert("Configuration failed to load. Please check your GitHub Actions.");
+    }
+};
 
 function showToast(text) {
     const t = document.getElementById("toast");
@@ -219,13 +225,24 @@ function showToast(text) {
 }
 
 async function load() {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
-        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
-    });
-    const data = await res.json();
-    cache = data.record;
-    ensure();
-    render();
+    try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.BIN_ID}/latest`, {
+            headers: { 
+                "X-Master-Key": CONFIG.API_KEY, 
+                "X-Access-Key": CONFIG.ACCESS_KEY 
+            }
+        });
+        const data = await res.json();
+        if (data.message) {
+            console.error("JSONBin Error:", data.message);
+            return;
+        }
+        cache = data.record;
+        ensure();
+        render();
+    } catch (err) {
+        console.error("Failed to fetch banlist:", err);
+    }
 }
 
 function ensure() {
@@ -301,12 +318,12 @@ function syncAllLists() {
 
 async function save() {
     showToast("Saving...");
-    await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
+    await fetch(`https://api.jsonbin.io/v3/b/${CONFIG.BIN_ID}`, {
         method:"PUT",
         headers:{
             "Content-Type":"application/json",
-            "X-Master-Key":KEY,
-            "X-Access-Key":ACCESS
+            "X-Master-Key": CONFIG.API_KEY,
+            "X-Access-Key": CONFIG.ACCESS_KEY
         },
         body: JSON.stringify(cache)
     });
@@ -319,6 +336,8 @@ function login(){
         document.getElementById("admin-panel").style.display="block";
         render();
         showToast("Admin Mode Active");
+    } else {
+        alert("Incorrect Password.");
     }
 }
 
@@ -374,13 +393,10 @@ function addCustom() {
     save();
     render();
 
-    // Clear inputs
     document.getElementById("cName").value = "";
     document.getElementById("cImg").value = "";
     showToast("Custom Card Added!");
 }
-
-load();
 </script>
 
 </body>
