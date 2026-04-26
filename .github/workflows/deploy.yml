@@ -3,13 +3,11 @@ name: Secure Deploy
 on:
   push:
     branches:
-      - main  # Change this to 'master' if your main branch uses that name
+      - main  
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    # This gives the script permission to create and update the gh-pages branch
     permissions:
       contents: write
 
@@ -17,15 +15,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Inject Secrets into config.js
+      - name: Safely Generate config.js
+        env:
+          BIN_ID: ${{ secrets.BIN_ID }}
+          API_KEY: ${{ secrets.API_KEY }}
+          ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
         run: |
-          sed -i "s|REPLACE_BIN_ID|${{ secrets.BIN_ID }}|g" config.js
-          sed -i "s|REPLACE_API_KEY|${{ secrets.API_KEY }}|g" config.js
-          sed -i "s|REPLACE_ACCESS_KEY|${{ secrets.ACCESS_KEY }}|g" config.js
-          sed -i "s|REPLACE_ADMIN_PASS|${{ secrets.ADMIN_PASS }}|g" config.js
+          node -e "
+          const fs = require('fs');
+          const config = {
+              BIN_ID: process.env.BIN_ID,
+              API_KEY: process.env.API_KEY,
+              ACCESS_KEY: process.env.ACCESS_KEY,
+              ADMIN_PASS: process.env.ADMIN_PASS
+          };
+          fs.writeFileSync('config.js', 'const CONFIG = ' + JSON.stringify(config, null, 4) + ';');
+          "
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: .        # Deploys the current directory
-          branch: gh-pages # This is the branch the live site will run from
+          folder: .
+          branch: gh-pages
