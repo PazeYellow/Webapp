@@ -123,7 +123,7 @@ button {
     text-transform: uppercase;
 }
 
-#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
+#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 100px; }
 #results img:hover { border-color: #d4af37; transform: scale(1.1); }
 </style>
 </head>
@@ -157,7 +157,20 @@ button {
 
         <h3>CUSTOM CARD</h3>
         <input id="cName" placeholder="Card Name">
-        <input id="cType" placeholder="Type">
+        
+        <select id="cType">
+            <option value="" disabled selected>Select Card Type</option>
+            <option value="Normal Monster">Normal Monster</option>
+            <option value="Effect Monster">Effect Monster</option>
+            <option value="Ritual Monster">Ritual Monster</option>
+            <option value="Fusion Monster">Fusion Monster</option>
+            <option value="Synchro Monster">Synchro Monster</option>
+            <option value="XYZ Monster">Xyz Monster</option>
+            <option value="Link Monster">Link Monster</option>
+            <option value="Spell Card">Spell Card</option>
+            <option value="Trap Card">Trap Card</option>
+        </select>
+        
         <textarea id="cEffect" placeholder="Effect Description"></textarea>
         <input id="cImg" placeholder="Image URL">
 
@@ -208,32 +221,35 @@ function getCategory(card) {
     if (t.includes("trap")) return "Trap Cards";
 
     // Extra Deck
-    if (t.includes("fusion")) return "Fusion Monsters";
-    if (t.includes("synchro")) return "Synchro Monsters";
-    if (t.includes("xyz") || t.includes("xys")) return "Xyz Monsters";
     if (t.includes("link")) return "Link Monsters";
+    if (t.includes("xyz") || t.includes("xys")) return "Xyz Monsters";
+    if (t.includes("synchro")) return "Synchro Monsters";
+    if (t.includes("fusion")) return "Fusion Monsters";
 
     // Ritual
     if (t.includes("ritual")) return "Ritual Monsters";
 
     // Main Deck monsters
-    if (t.includes("normal monster")) return "Normal Monsters";
+    // Exclude cards that have effects so they default to Effect Monsters instead
+    if (t.includes("normal") && !t.includes("effect")) return "Normal Monsters";
 
-    if (t.includes("effect monster")) return "Effect Monsters";
-
-    // fallback
+    // Default fallback for everything else (Effect, Pendulum Effect, Toon, Spirit, etc.)
     return "Effect Monsters";
 }
 
 /* ---------------- LOAD ---------------- */
 async function load() {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
-        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
-    });
-    const data = await res.json();
-    cache = data.record;
-    ensure();
-    render();
+    try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+            headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
+        });
+        const data = await res.json();
+        cache = data.record;
+        ensure();
+        render();
+    } catch (e) {
+        console.error("Failed to load banlist.", e);
+    }
 }
 
 function ensure() {
@@ -253,13 +269,16 @@ function render() {
 
         cache[zone].forEach(card => {
             const cat = getCategory(card);
-            (grouped[cat] ||= []).push(card);
+            if (grouped[cat]) {
+                grouped[cat].push(card);
+            }
         });
 
         ORDER.forEach(cat => {
             const list = grouped[cat];
             if (!list?.length) return;
 
+            // Sort alphabetically within the specific category
             list.sort((a,b)=>a.name.localeCompare(b.name));
 
             const wrap = document.createElement("div");
@@ -338,27 +357,41 @@ function login(){
         admin = true;
         document.getElementById("admin").style.display="block";
         render();
+    } else {
+        alert("Incorrect Password");
     }
 }
 
 /* ---------------- API ---------------- */
 async function searchTCG(){
     const q = document.getElementById("searchInput").value;
-    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-    const data = await res.json();
+    if (!q) return;
+    
+    try {
+        const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+        const data = await res.json();
 
-    const results = document.getElementById("results");
-    results.innerHTML="";
+        const results = document.getElementById("results");
+        results.innerHTML="";
 
-    data.data?.slice(0,10).forEach(c=>{
-        const img=document.createElement("img");
-        img.src=c.card_images[0].image_url_small;
-        img.onclick=()=>{
-            selectedTCG=c;
-            document.getElementById("selected").textContent="Selected: "+c.name;
-        };
-        results.appendChild(img);
-    });
+        if (data.error) {
+            results.innerHTML = `<p style="color:red; font-size:12px;">No cards found.</p>`;
+            return;
+        }
+
+        data.data?.slice(0,10).forEach(c=>{
+            const img=document.createElement("img");
+            img.src=c.card_images[0].image_url_small;
+            img.title=c.name;
+            img.onclick=()=>{
+                selectedTCG=c;
+                document.getElementById("selected").textContent="Selected: "+c.name;
+            };
+            results.appendChild(img);
+        });
+    } catch (e) {
+        console.error("API Search Failed", e);
+    }
 }
 
 function addTCG(){
@@ -371,19 +404,34 @@ function addTCG(){
     });
 
     save();render();
+    
+    // Clear selection
+    selectedTCG = null;
+    document.getElementById("selected").textContent = "";
+    document.getElementById("results").innerHTML = "";
+    document.getElementById("searchInput").value = "";
 }
 
 function addCustom(){
     const name=document.getElementById("cName").value;
-    if(!name) return;
+    const type=document.getElementById("cType").value;
+    
+    if(!name) return alert("Please provide a Card Name.");
+    if(!type) return alert("Please select a Card Type.");
 
     cache[document.getElementById("cStatus").value].push({
         name,
-        type:document.getElementById("cType").value,
-        image:document.getElementById("cImg").value
+        type,
+        image:document.getElementById("cImg").value || 'https://via.placeholder.com/150x220?text=Custom+Card'
     });
 
     save();render();
+    
+    // Clear inputs
+    document.getElementById("cName").value = "";
+    document.getElementById("cType").value = "";
+    document.getElementById("cEffect").value = "";
+    document.getElementById("cImg").value = "";
 }
 
 load();
