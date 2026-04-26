@@ -1,0 +1,6 @@
+      - name: Inject Secrets into config.js
+        run: |
+          sed -i "s/REPLACE_BIN_ID/${{ secrets.BIN_ID }}/g" config.js
+          sed -i "s|REPLACE_API_KEY|${{ secrets.API_KEY }}|g" config.js
+          sed -i "s|REPLACE_ACCESS_KEY|${{ secrets.ACCESS_KEY }}|g" config.js
+          sed -i "s/REPLACE_ADMIN_PASS/${{ secrets.ADMIN_PASS }}/g" config.js
