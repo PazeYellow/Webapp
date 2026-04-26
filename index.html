@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Banlist System - Drag to Trash</title>
+<title>Banlist System - Smooth Drag</title>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
@@ -13,6 +13,7 @@ body {
     font-family:'Segoe UI', sans-serif;
     background:#0d0d0d;
     color:#eee;
+    overflow-x: hidden;
 }
 
 header {
@@ -24,7 +25,7 @@ header {
     font-weight: bold;
 }
 
-.container { max-width:1100px; margin:auto; padding:10px; padding-bottom: 100px; }
+.container { max-width:1100px; margin:auto; padding:10px; padding-bottom: 120px; }
 
 .section {
     background:#1a1a1a;
@@ -48,7 +49,7 @@ header {
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
     gap:12px;
-    min-height: 80px;
+    min-height: 100px;
 }
 
 .card {
@@ -58,13 +59,19 @@ header {
     text-align:center;
     position:relative;
     border: 1px solid #333;
-    transition: transform 0.2s;
+    /* Prevent text selection during drag */
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .admin-mode .card { cursor: grab; }
 .admin-mode .card:active { cursor: grabbing; }
 
-.card img { width:100%; display: block; pointer-events: none; }
+.card img { 
+    width:100%; 
+    display: block; 
+    pointer-events: none; /* Critical for smooth dragging */
+}
 
 .name {
     font-size:10px;
@@ -77,30 +84,22 @@ header {
     pointer-events: none;
 }
 
-/* Trash Zone Styling */
 #trash-zone {
     display: none;
     position: fixed;
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    width: 80px;
-    height: 80px;
+    width: 70px;
+    height: 70px;
     background: #8b0000;
     border-radius: 50%;
-    z-index: 2000;
+    z-index: 9999;
     text-align: center;
-    line-height: 80px;
-    font-size: 30px;
-    box-shadow: 0 0 20px rgba(139,0,0,0.5);
+    line-height: 70px;
+    font-size: 28px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
     border: 2px solid #ff4d4d;
-    transition: all 0.3s;
-}
-
-#trash-zone.drag-over {
-    transform: translateX(-50%) scale(1.3);
-    background: #ff0000;
-    box-shadow: 0 0 30px rgba(255,0,0,0.8);
 }
 
 /* Toast */
@@ -114,7 +113,7 @@ header {
     border-radius: 5px;
     font-weight: bold;
     display: none;
-    z-index: 3000;
+    z-index: 10000;
 }
 
 .admin { display:none; background:#111; padding:20px; border-radius:10px; margin-top:20px; border: 1px dashed #444; }
@@ -139,10 +138,16 @@ button {
     text-transform: uppercase;
 }
 
-#results img { margin: 5px; cursor: pointer; height: 80px; border: 2px solid transparent; }
-#results img:hover { border-color: #d4af37; }
+#results img { margin: 5px; cursor: pointer; height: 80px; }
 
-.sortable-ghost { opacity: 0.1; }
+/* Sortable Styles */
+.sortable-fallback {
+    opacity: 0.9 !important;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+    z-index: 9999 !important;
+}
+
+.sortable-ghost { opacity: 0.2; }
 </style>
 </head>
 
@@ -173,7 +178,7 @@ button {
 
     <div id="admin-panel" class="admin">
         <h3>ADD CARD</h3>
-        <input id="searchInput" placeholder="Search TCG database...">
+        <input id="searchInput" placeholder="Search card name...">
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
         <p id="selected"></p>
@@ -246,15 +251,12 @@ function render() {
         if (admin) {
             sortables.push(new Sortable(grid, {
                 group: 'banlist',
-                animation: 150,
+                animation: 200,
+                forceFallback: true, // This makes dragging much more consistent
+                fallbackOnBody: true,
+                swapThreshold: 0.65,
                 ghostClass: 'sortable-ghost',
-                onEnd: (evt) => {
-                    // Check if dropped into trash
-                    if (evt.to.id === 'trash-zone') {
-                        evt.item.remove();
-                    }
-                    syncAllLists();
-                }
+                onEnd: () => syncAllLists()
             }));
         }
     });
@@ -264,13 +266,12 @@ function render() {
         const trash = document.getElementById("trash-zone");
         trash.style.display = "block";
 
-        // Make trash a drop target
         sortables.push(new Sortable(trash, {
             group: 'banlist',
             onAdd: (evt) => {
-                evt.item.remove(); // Remove card element
+                evt.item.remove();
                 syncAllLists();
-                showToast("Card Deleted");
+                showToast("Deleted");
             }
         }));
     }
