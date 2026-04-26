@@ -1,74 +1,127 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Global Chat</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yu-Gi-Oh Custom Banlist</title>
+    <style>
+        :root { --dark: #1a1a1a; --gold: #d4af37; --card-bg: #2a2a2a; }
+        body { font-family: sans-serif; background: var(--dark); color: white; margin: 0; padding: 10px; }
+        .container { max-width: 800px; margin: auto; }
+        .section { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid var(--gold); }
+        .card-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #444; }
+        .card-item img { width: 50px; height: 75px; object-fit: cover; }
+        .admin-panel { display: none; background: #333; padding: 20px; border-radius: 10px; margin-top: 20px; }
+        input, select, textarea { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: none; }
+        button { background: var(--gold); color: black; padding: 10px 20px; border: none; font-weight: bold; cursor: pointer; width: 100%; }
+        #login-btn { margin-top: 20px; opacity: 0.5; font-size: 0.8em; }
+    </style>
 </head>
 <body>
 
-<div id="loginBox">
-  <h2>Login / Register</h2>
-  <input id="username" placeholder="username">
-  <input id="password" type="password" placeholder="password">
-  <input id="avatar" placeholder="avatar image URL">
-  <button onclick="login()">Enter</button>
+<div class="container">
+    <h1>Banlist (TCG + Custom)</h1>
+    
+    <div id="banlist-content">
+        <div class="section"><h2>Forbidden</h2><div id="forbidden-list"></div></div>
+        <div class="section"><h2>Limited</h2><div id="limited-list"></div></div>
+        <div class="section"><h2>Semi-Limited</h2><div id="semi-list"></div></div>
+    </div>
+
+    <button id="login-btn" onclick="showLogin()">Admin Login</button>
+    
+    <div id="admin-area" class="admin-panel">
+        <h3>Add New Card</h3>
+        <input type="text" id="cardName" placeholder="Card Name">
+        <input type="text" id="cardType" placeholder="Type (e.g. Effect Monster)">
+        <textarea id="cardEffect" placeholder="Card Effect"></textarea>
+        <select id="banStatus">
+            <option value="forbidden">Forbidden</option>
+            <option value="limited">Limited</option>
+            <option value="semi_limited">Semi-Limited</option>
+        </select>
+        <p>For Custom: Put image URL below. For TCG: Leave blank (uses API).</p>
+        <input type="text" id="cardImg" placeholder="Image URL">
+        <button onclick="addCard()">Add to Banlist</button>
+    </div>
 </div>
 
-<div id="chatBox" style="display:none;">
-  <h2>Global Chat</h2>
-  <div id="messages"></div>
-
-  <input id="msg" placeholder="message">
-  <button onclick="sendMsg()">Send</button>
-</div>
-
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-const socket = io();
+    // CONFIGURATION (Replace with your JSONBin details)
+    const BIN_ID = 'YOUR_BIN_ID_HERE';
+    const API_KEY = '$2b$10$YOUR_API_KEY_HERE';
+    const ADMIN_PASS = 'CustomYUGIOHBanlist123';
 
-function login(){
-  fetch("/login", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      username: username.value,
-      password: password.value,
-      avatar: avatar.value
-    })
-  }).then(r => r.json()).then(d => {
-    if(!d.error){
-      loginBox.style.display = "none";
-      chatBox.style.display = "block";
-      loadMessages();
+    async function loadBanlist() {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: { 'X-Master-Key': API_KEY }
+        });
+        const data = await res.json();
+        renderList(data.record);
     }
-  })
-}
 
-function sendMsg(){
-  socket.send(msg.value);
-  msg.value = "";
-}
+    function renderList(list) {
+        ['forbidden', 'limited', 'semi_limited'].forEach(status => {
+            const container = document.getElementById(status === 'semi_limited' ? 'semi-list' : status + '-list');
+            container.innerHTML = list[status].map(card => `
+                <div class="card-item">
+                    <img src="${card.image || 'https://images.ygoprodeck.com/images/cards/placeholder.jpg'}" onerror="this.src='https://images.ygoprodeck.com/images/cards/73734803.jpg'">
+                    <div>
+                        <strong>${card.name}</strong><br>
+                        <small>${card.type}</small>
+                    </div>
+                </div>
+            `).join('');
+        });
+    }
 
-socket.on("message", (data) => {
-  addMessage(data);
-});
+    function showLogin() {
+        const pass = prompt("Enter Admin Password:");
+        if(pass === ADMIN_PASS) {
+            document.getElementById('admin-area').style.display = 'block';
+            document.getElementById('login-btn').style.display = 'none';
+        } else {
+            alert("Wrong password!");
+        }
+    }
 
-function addMessage(data){
-  const div = document.createElement("div");
-  div.className = "msg";
-  div.innerHTML = `
-    <img src="${data.avatar}" width="30" height="30">
-    <b>${data.user}:</b> ${data.text}
-  `;
-  messages.appendChild(div);
-}
+    async function addCard() {
+        const name = document.getElementById('cardName').value;
+        const status = document.getElementById('banStatus').value;
+        let img = document.getElementById('cardImg').value;
 
-function loadMessages(){
-  fetch("/messages").then(r => r.json()).then(data => {
-    data.forEach(addMessage);
-  });
-}
+        // If no image provided, try to fetch from YGOPRODeck API
+        if(!img) {
+            const apiRes = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?name=${encodeURIComponent(name)}`);
+            const apiData = await apiRes.json();
+            if(apiData.data) img = apiData.data[0].card_images[0].image_url;
+        }
+
+        const newCard = { 
+            name, 
+            type: document.getElementById('cardType').value, 
+            effect: document.getElementById('cardEffect').value,
+            image: img 
+        };
+
+        // Get current, update, and push back to JSONBin
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: { 'X-Master-Key': API_KEY }
+        });
+        let data = await res.json();
+        data.record[status].push(newCard);
+
+        await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+            body: JSON.stringify(data.record)
+        });
+
+        alert("Card Added!");
+        location.reload();
+    }
+
+    loadBanlist();
 </script>
-
 </body>
 </html>
