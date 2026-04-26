@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Banlist System - Manual Sort</title>
+<title>Banlist System - Drag to Trash</title>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
@@ -24,7 +24,7 @@ header {
     font-weight: bold;
 }
 
-.container { max-width:1100px; margin:auto; padding:10px; }
+.container { max-width:1100px; margin:auto; padding:10px; padding-bottom: 100px; }
 
 .section {
     background:#1a1a1a;
@@ -32,7 +32,6 @@ header {
     margin-bottom:40px;
     border-radius:10px;
     border: 1px solid #333;
-    transition: border 0.3s;
 }
 
 .status-header {
@@ -49,7 +48,7 @@ header {
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
     gap:12px;
-    min-height: 100px; /* Bigger drop zone */
+    min-height: 80px;
 }
 
 .card {
@@ -59,6 +58,7 @@ header {
     text-align:center;
     position:relative;
     border: 1px solid #333;
+    transition: transform 0.2s;
 }
 
 .admin-mode .card { cursor: grab; }
@@ -68,7 +68,7 @@ header {
 
 .name {
     font-size:10px;
-    padding:6px;
+    padding:8px;
     min-height: 28px;
     display: flex;
     align-items: center;
@@ -77,33 +77,55 @@ header {
     pointer-events: none;
 }
 
-.controls {
-    display:none;
-    background:rgba(0,0,0,0.9);
-    padding: 5px;
+/* Trash Zone Styling */
+#trash-zone {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 80px;
+    background: #8b0000;
+    border-radius: 50%;
+    z-index: 2000;
+    text-align: center;
+    line-height: 80px;
+    font-size: 30px;
+    box-shadow: 0 0 20px rgba(139,0,0,0.5);
+    border: 2px solid #ff4d4d;
+    transition: all 0.3s;
 }
 
-.controls button {
-    width:100%;
-    font-size:10px;
-    border:none;
-    padding:5px;
-    cursor:pointer;
-    border-radius: 4px;
+#trash-zone.drag-over {
+    transform: translateX(-50%) scale(1.3);
+    background: #ff0000;
+    box-shadow: 0 0 30px rgba(255,0,0,0.8);
 }
 
-.del { background:#8b0000; color:white; }
+/* Toast */
+#toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #d4af37;
+    color: #000;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: bold;
+    display: none;
+    z-index: 3000;
+}
 
 .admin { display:none; background:#111; padding:20px; border-radius:10px; margin-top:20px; border: 1px dashed #444; }
 
-input,select,textarea {
+input,select {
     width:100%;
     margin:5px 0;
     padding:10px;
     background:#222;
     color:white;
     border:1px solid #333;
-    box-sizing: border-box;
 }
 
 button {
@@ -117,80 +139,51 @@ button {
     text-transform: uppercase;
 }
 
-#results img { margin: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; height: 80px; }
+#results img { margin: 5px; cursor: pointer; height: 80px; border: 2px solid transparent; }
 #results img:hover { border-color: #d4af37; }
 
-/* Visual Feedback Toast */
-#toast {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: #d4af37;
-    color: #000;
-    padding: 10px 20px;
-    border-radius: 5px;
-    font-weight: bold;
-    display: none;
-    z-index: 1000;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-}
-
-.sortable-ghost { opacity: 0.2; transform: scale(0.8); }
-.sortable-chosen { border: 1px solid #d4af37; }
+.sortable-ghost { opacity: 0.1; }
 </style>
 </head>
 
 <body>
 
-<div id="toast">Updating Database...</div>
+<div id="toast">Updating...</div>
+<div id="trash-zone">🗑️</div>
+
 <header>YGO BANLIST SYSTEM</header>
 
 <div class="container" id="main-content">
     <div class="section">
         <div class="status-header">Forbidden</div>
-        <div id="forbidden" class="grid" data-status="forbidden"></div>
+        <div id="forbidden" class="grid"></div>
     </div>
     
     <div class="section">
         <div class="status-header">Limited</div>
-        <div id="limited" class="grid" data-status="limited"></div>
+        <div id="limited" class="grid"></div>
     </div>
 
     <div class="section">
         <div class="status-header">Semi-Limited</div>
-        <div id="semi_limited" class="grid" data-status="semi_limited"></div>
+        <div id="semi_limited" class="grid"></div>
     </div>
 
     <button onclick="login()">ADMIN LOGIN</button>
 
     <div id="admin-panel" class="admin">
-        <h3>TCG DATABASE SEARCH</h3>
-        <input id="searchInput" placeholder="Search card name...">
+        <h3>ADD CARD</h3>
+        <input id="searchInput" placeholder="Search TCG database...">
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
-        <p id="selected" style="color:#d4af37; font-size: 14px; font-weight: bold;"></p>
+        <p id="selected"></p>
 
         <select id="tcgStatus">
             <option value="forbidden">Forbidden</option>
             <option value="limited">Limited</option>
             <option value="semi_limited">Semi-Limited</option>
         </select>
-        <button onclick="addTCG()">Add to Banlist</button>
-
-        <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
-
-        <h3>CUSTOM CARD</h3>
-        <input id="cName" placeholder="Card Name">
-        <input id="cType" placeholder="Card Type">
-        <input id="cImg" placeholder="Image URL">
-
-        <select id="cStatus">
-            <option value="forbidden">Forbidden</option>
-            <option value="limited">Limited</option>
-            <option value="semi_limited">Semi-Limited</option>
-        </select>
-
-        <button onclick="addCustom()">Add Custom</button>
+        <button onclick="addTCG()">Add Selected</button>
     </div>
 </div>
 
@@ -231,14 +224,14 @@ function render() {
     sortables.forEach(s => s.destroy());
     sortables = [];
 
-    ["forbidden","limited","semi_limited"].forEach(zone => {
+    const zones = ["forbidden","limited","semi_limited"];
+    zones.forEach(zone => {
         const grid = document.getElementById(zone);
         grid.innerHTML = "";
 
-        cache[zone].forEach((card, index) => {
+        cache[zone].forEach(card => {
             const el = document.createElement("div");
             el.className = "card";
-            // Store unique data to identify card during removal/drag
             el.dataset.name = card.name;
             el.dataset.img = card.image;
             el.dataset.type = card.type;
@@ -246,60 +239,58 @@ function render() {
             el.innerHTML = `
                 <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
                 <div class="name">${card.name}</div>
-                <div class="controls">
-                    <button class="del" onclick="removeCard(this)">Remove</button>
-                </div>
             `;
-
-            if (admin) el.querySelector(".controls").style.display = "block";
             grid.appendChild(el);
         });
 
         if (admin) {
             sortables.push(new Sortable(grid, {
-                group: 'banlist', // This allows dragging between lists
+                group: 'banlist',
                 animation: 150,
                 ghostClass: 'sortable-ghost',
-                onEnd: () => {
+                onEnd: (evt) => {
+                    // Check if dropped into trash
+                    if (evt.to.id === 'trash-zone') {
+                        evt.item.remove();
+                    }
                     syncAllLists();
                 }
             }));
         }
     });
 
-    if(admin) document.getElementById("main-content").classList.add("admin-mode");
+    if (admin) {
+        document.getElementById("main-content").classList.add("admin-mode");
+        const trash = document.getElementById("trash-zone");
+        trash.style.display = "block";
+
+        // Make trash a drop target
+        sortables.push(new Sortable(trash, {
+            group: 'banlist',
+            onAdd: (evt) => {
+                evt.item.remove(); // Remove card element
+                syncAllLists();
+                showToast("Card Deleted");
+            }
+        }));
+    }
 }
 
-/* ---------------- SYNC LOGIC ---------------- */
-// Reads the entire DOM and updates the cache object to match exactly what you see
 function syncAllLists() {
-    const statuses = ["forbidden", "limited", "semi_limited"];
-    statuses.forEach(status => {
+    ["forbidden", "limited", "semi_limited"].forEach(status => {
         const grid = document.getElementById(status);
         const cards = grid.querySelectorAll('.card');
-        const newList = [];
-        
-        cards.forEach(cardEl => {
-            newList.push({
-                name: cardEl.dataset.name,
-                image: cardEl.dataset.img,
-                type: cardEl.dataset.type
-            });
-        });
-        cache[status] = newList;
+        cache[status] = Array.from(cards).map(cardEl => ({
+            name: cardEl.dataset.name,
+            image: cardEl.dataset.img,
+            type: cardEl.dataset.type
+        }));
     });
     save();
 }
 
-function removeCard(btn) {
-    const cardEl = btn.closest('.card');
-    cardEl.remove();
-    syncAllLists();
-    showToast("Card Removed");
-}
-
 async function save() {
-    showToast("Saving Changes...");
+    showToast("Saving...");
     await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
         method:"PUT",
         headers:{
@@ -317,7 +308,7 @@ function login(){
         admin = true;
         document.getElementById("admin-panel").style.display="block";
         render();
-        showToast("Admin Logged In");
+        showToast("Admin Mode Active");
     }
 }
 
@@ -342,22 +333,10 @@ async function searchTCG(){
 function addTCG(){
     if(!selectedTCG) return alert("Select card");
     const status = document.getElementById("tcgStatus").value;
-    cache[status].unshift({ // Adds to start of list
+    cache[status].unshift({
         name:selectedTCG.name,
         type:selectedTCG.type,
         image:selectedTCG.card_images[0].image_url
-    });
-    save(); render();
-}
-
-function addCustom(){
-    const name=document.getElementById("cName").value;
-    if(!name) return;
-    const status = document.getElementById("cStatus").value;
-    cache[status].unshift({
-        name,
-        type:document.getElementById("cType").value,
-        image:document.getElementById("cImg").value
     });
     save(); render();
 }
