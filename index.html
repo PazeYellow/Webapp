@@ -1,212 +1,169 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YGO Custom Banlist Manager</title>
-    <script src="config.js"></script>
-    <style>
-        :root { --dark: #121212; --gold: #d4af37; --red: #8b0000; --card-bg: #1e1e1e; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--dark); color: #eee; margin: 0; padding: 10px; line-height: 1.6; }
-        .container { max-width: 900px; margin: auto; }
-        
-        /* Banlist Sections */
-        .section { background: var(--card-bg); padding: 15px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #333; }
-        .forbidden { border-top: 5px solid var(--red); }
-        .limited { border-top: 5px solid #ff8c00; }
-        .semi { border-top: 5px solid var(--gold); }
-        h2 { text-transform: uppercase; letter-spacing: 2px; margin-top: 0; display: flex; align-items: center; justify-content: space-between; font-size: 1.2rem; }
-        
-        /* Grid */
-        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
-        .card-item { background: #252525; border-radius: 5px; overflow: hidden; text-align: center; font-size: 0.75em; border: 1px solid #444; }
-        .card-item img { width: 100%; height: auto; display: block; }
-        .card-info { padding: 5px; font-weight: bold; min-height: 30px; display: flex; align-items: center; justify-content: center; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YGO Custom Banlist Manager</title>
+<script src="config.js"></script>
 
-        /* Admin Styles */
-        .admin-panel { display: none; background: #2a2a2a; padding: 20px; border-radius: 15px; border: 2px dashed var(--gold); margin-top: 30px; }
-        .search-box { display: flex; gap: 5px; margin-bottom: 15px; }
-        #search-results { display: flex; gap: 10px; overflow-x: auto; padding: 10px 0; border-bottom: 1px solid #444; min-height: 50px; }
-        .search-res-item { min-width: 80px; cursor: pointer; transition: 0.2s; }
-        .search-res-item img { width: 80px; border-radius: 4px; border: 2px solid transparent; }
-        .search-res-item img:hover { border-color: var(--gold); }
+<style>
+:root { --dark:#121212; --gold:#d4af37; --red:#8b0000; --card-bg:#1e1e1e; }
+body { font-family:'Segoe UI'; background:var(--dark); color:#eee; margin:0; padding:10px; }
+.container { max-width:900px; margin:auto; }
 
-        /* Sucky Custom Creator */
-        .custom-suck { background: #000; border: 3px solid #333; padding: 15px; margin-top: 20px; }
-        .custom-suck input, .custom-suck textarea { background: #111; color: lime; font-family: monospace; border: 1px solid #222; }
-        
-        input, select, textarea { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: 1px solid #444; background: #333; color: white; box-sizing: border-box; }
-        button { background: var(--gold); color: black; padding: 12px; border: none; font-weight: bold; cursor: pointer; width: 100%; border-radius: 5px; margin: 5px 0; }
-        .login-btn { margin-top: 40px; opacity: 0.3; background: transparent; color: white; border: 1px solid #444; font-size: 0.8rem; }
-    </style>
+.section { background:var(--card-bg); padding:15px; border-radius:12px; margin-bottom:25px; }
+.forbidden { border-top:5px solid var(--red); }
+.limited { border-top:5px solid orange; }
+.semi { border-top:5px solid var(--gold); }
+
+.card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:10px; }
+.card-item { background:#252525; border-radius:5px; text-align:center; font-size:.75em; }
+.card-item img { width:100%; }
+
+.admin-panel { display:none; background:#2a2a2a; padding:20px; margin-top:30px; }
+button { background:var(--gold); padding:10px; border:none; cursor:pointer; width:100%; }
+.login-btn { margin-top:30px; opacity:.3; background:none; border:1px solid #444; color:white; }
+</style>
 </head>
+
 <body>
 
 <div class="container">
-    <header style="text-align:center; padding: 20px 0;">
-        <h1 style="color:var(--gold); margin:0; letter-spacing: 3px;">SYSTEM BANLIST</h1>
-    </header>
-    
-    <div id="banlist-content">
-        <div class="section forbidden"><h2>Forbidden <span id="count-forbidden"></span></h2><div id="forbidden-list" class="card-grid"></div></div>
-        <div class="section limited"><h2>Limited <span id="count-limited"></span></h2><div id="limited-list" class="card-grid"></div></div>
-        <div class="section semi"><h2>Semi-Limited <span id="count-semi"></span></h2><div id="semi-list" class="card-grid"></div></div>
-    </div>
 
-    <button class="login-btn" onclick="showLogin()">[ADMIN LOGIN]</button>
-    
-    <div id="admin-area" class="admin-panel">
-        <h2 style="color:var(--gold)">Database Editor</h2>
-        
-        <div style="background:#1a1a1a; padding:15px; border-radius:8px; margin-bottom:15px;">
-            <h3 style="margin-top:0;">1. Search Official TCG</h3>
-            <div class="search-box">
-                <input type="text" id="tcgSearchQuery" placeholder="Card Name...">
-                <button style="width:80px" onclick="searchTCG()">Find</button>
-            </div>
-            <div id="search-results"></div>
-            <p id="selected-card-name" style="color:var(--gold); margin: 10px 0; font-size: 0.9rem;"></p>
-            <select id="tcgStatus">
-                <option value="forbidden">Forbidden</option>
-                <option value="limited">Limited</option>
-                <option value="semi_limited">Semi-Limited</option>
-            </select>
-            <button onclick="addSelectedTCG()" id="add-tcg-btn" disabled>Add Official Card</button>
-        </div>
+<h1 style="text-align:center;color:var(--gold)">SYSTEM BANLIST</h1>
 
-        <div class="custom-suck">
-            <h3 style="color:lime; font-family:monospace; margin-top:0;">2. MANUAL OVERRIDE (CUSTOM)</h3>
-            <input type="text" id="custName" placeholder="CARD_NAME">
-            <input type="text" id="custType" placeholder="CARD_TYPE">
-            <textarea id="custEffect" rows="2" placeholder="CARD_EFFECT"></textarea>
-            <input type="text" id="custImg" placeholder="DIRECT_IMAGE_URL">
-            <select id="custStatus">
-                <option value="forbidden">Forbidden</option>
-                <option value="limited">Limited</option>
-                <option value="semi_limited">Semi-Limited</option>
-            </select>
-            <button style="background:red; color:white;" onclick="addCustom()">UPLOAD DATA</button>
-        </div>
-    </div>
+<div id="banlist-content">
+<div class="section forbidden"><h2>Forbidden <span id="count-forbidden"></span></h2><div id="forbidden-list" class="card-grid"></div></div>
+<div class="section limited"><h2>Limited <span id="count-limited"></span></h2><div id="limited-list" class="card-grid"></div></div>
+<div class="section semi"><h2>Semi-Limited <span id="count-semi"></span></h2><div id="semi-list" class="card-grid"></div></div>
+</div>
+
+<button class="login-btn" onclick="showLogin()">[ADMIN LOGIN]</button>
+
+<div id="admin-area" class="admin-panel">
+<h2>Database Editor</h2>
+
+<input id="custName" placeholder="Card Name">
+<select id="custStatus">
+<option value="forbidden">Forbidden</option>
+<option value="limited">Limited</option>
+<option value="semi_limited">Semi-Limited</option>
+</select>
+
+<button onclick="addCustom()">Add Card</button>
+</div>
+
 </div>
 
 <script>
-    const BIN_ID = CONFIG.BIN_ID;
-    const API_KEY = CONFIG.API_KEY;
-    const ADMIN_PASS = CONFIG.ADMIN_PASS;
-    let selectedTCGCard = null;
+const BIN_ID = CONFIG.BIN_ID;
+const API_KEY = CONFIG.API_KEY;
+const ADMIN_PASS = CONFIG.ADMIN_PASS;
 
-    async function loadBanlist() {
-        try {
-            const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, { 
-                headers: { 'X-Master-Key': API_KEY } 
-            });
-            const data = await res.json();
-            renderList(data.record);
-        } catch (e) { console.error("Load failed", e); }
-    }
-
-    function renderList(list) {
-        ['forbidden', 'limited', 'semi_limited'].forEach(status => {
-            const containerId = status === 'semi_limited' ? 'semi-list' : status + '-list';
-            const container = document.getElementById(containerId);
-            const countSpan = document.getElementById('count-' + status.split('_')[0]);
-            
-            if(countSpan) countSpan.innerText = `(${list[status].length})`;
-            
-            container.innerHTML = list[status].map(card => `
-                <div class="card-item">
-                    <img src="${card.image}" onerror="this.src='https://images.ygoprodeck.com/images/cards/73734803.jpg'">
-                    <div class="card-info">${card.name}</div>
-                </div>
-            `).join('');
-        });
-    }
-
-    async function searchTCG() {
-        const query = document.getElementById('tcgSearchQuery').value;
-        const resultsDiv = document.getElementById('search-results');
-        if(!query) return;
-        resultsDiv.innerHTML = "Looking...";
-        
-        try {
-            const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(query)}`);
-            const data = await res.json();
-            resultsDiv.innerHTML = data.data.slice(0, 10).map(card => `
-                <div class="search-res-item" onclick='selectCard(${JSON.stringify(card).replace(/'/g, "&apos;")})'>
-                    <img src="${card.card_images[0].image_url_small}">
-                </div>
-            `).join('');
-        } catch (e) { resultsDiv.innerHTML = "No results."; }
-    }
-
-    function selectCard(card) {
-        selectedTCGCard = card;
-        document.getElementById('selected-card-name').innerText = "Target: " + card.name;
-        document.getElementById('add-tcg-btn').disabled = false;
-    }
-
-    async function addSelectedTCG() {
-        const status = document.getElementById('tcgStatus').value;
-        const newCard = {
-            name: selectedTCGCard.name,
-            type: selectedTCGCard.type,
-            image: selectedTCGCard.card_images[0].image_url
-        };
-        await pushToDB(newCard, status);
-    }
-
-    async function addCustom() {
-        const name = document.getElementById('custName').value;
-        const status = document.getElementById('custStatus').value;
-        if(!name) return alert("Custom card needs a name.");
-        
-        const newCard = {
-            name: name,
-            type: document.getElementById('custType').value,
-            effect: document.getElementById('custEffect').value,
-            image: document.getElementById('custImg').value || 'https://images.ygoprodeck.com/images/cards/73734803.jpg'
-        };
-        await pushToDB(newCard, status);
-    }
-
-    async function pushToDB(cardObj, status) {
-        try {
-            const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, { 
-                headers: { 'X-Master-Key': API_KEY } 
-            });
-            let data = await getRes.json();
-            
-            data.record[status].push(cardObj);
-
-            const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-                method: 'PUT',
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'X-Master-Key': API_KEY,
-                    'X-Bin-Versioning': 'false'
-                },
-                body: JSON.stringify(data.record)
-            });
-
-            if(putRes.ok) {
-                alert("Database Updated!");
-                location.reload();
-            } else {
-                const err = await putRes.json();
-                alert("Error: " + err.message);
+async function loadBanlist() {
+    try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: {
+                'X-Master-Key': API_KEY
             }
-        } catch (e) { alert("System connection error."); }
-    }
+        });
 
-    function showLogin() {
-        if(prompt("Enter Admin Password:") === ADMIN_PASS) {
-            document.getElementById('admin-area').style.display = 'block';
-            window.scrollTo(0, document.body.scrollHeight);
+        const data = await res.json();
+        renderList(data.record);
+
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderList(list) {
+    ["forbidden","limited","semi_limited"].forEach(status => {
+        const id = status === "semi_limited" ? "semi-list" : status + "-list";
+        const el = document.getElementById(id);
+
+        if (!list[status]) list[status] = [];
+
+        el.innerHTML = list[status].map(c => `
+            <div class="card-item">
+                <img src="${c.image || ''}">
+                <div>${c.name}</div>
+            </div>
+        `).join("");
+    });
+}
+
+async function addCustom() {
+    const name = document.getElementById("custName").value;
+    const status = document.getElementById("custStatus").value;
+
+    if (!name) return alert("Name required");
+
+    const card = {
+        name: name,
+        image: ""
+    };
+
+    await pushToDB(card, status);
+}
+
+async function pushToDB(cardObj, status) {
+    try {
+        // GET CURRENT DATA
+        const getRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: {
+                'X-Master-Key': API_KEY
+            }
+        });
+
+        const getData = await getRes.json();
+        let record = getData.record;
+
+        // ENSURE STRUCTURE
+        if (!record.forbidden) record.forbidden = [];
+        if (!record.limited) record.limited = [];
+        if (!record.semi_limited) record.semi_limited = [];
+
+        // ADD CARD
+        record[status].push(cardObj);
+
+        console.log("UPDATING:", record);
+
+        // PUT UPDATE
+        const putRes = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Master-Key": API_KEY,
+                "X-Bin-Versioning": "false"
+            },
+            body: JSON.stringify(record)
+        });
+
+        const result = await putRes.json();
+        console.log("RESULT:", result);
+
+        if (!putRes.ok) {
+            alert("ERROR: " + result.message);
+            return;
         }
-    }
 
-    loadBanlist();
+        alert("Updated!");
+        location.reload();
+
+    } catch (err) {
+        console.error(err);
+        alert("System error");
+    }
+}
+
+function showLogin() {
+    if (prompt("Password?") === ADMIN_PASS) {
+        document.getElementById("admin-area").style.display = "block";
+    }
+}
+
+loadBanlist();
 </script>
+
 </body>
 </html>
