@@ -174,8 +174,8 @@ button {
     <button onclick="login()">ADMIN LOGIN</button>
 
     <div id="admin-panel" class="admin">
-        <h3>ADD CARD</h3>
-        <input id="searchInput" placeholder="Search card name...">
+        <h3>ADD TCG CARD</h3>
+        <input id="searchInput" placeholder="Search TCG database...">
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
         <p id="selected" style="color:#d4af37; font-weight:bold; margin-top:10px;"></p>
@@ -185,7 +185,19 @@ button {
             <option value="limited">Limited</option>
             <option value="semi_limited">Semi-Limited</option>
         </select>
-        <button onclick="addTCG()">Add Selected</button>
+        <button onclick="addTCG()">Add Selected TCG</button>
+
+        <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+
+        <h3>ADD CUSTOM CARD</h3>
+        <input id="cName" placeholder="Card Name">
+        <input id="cImg" placeholder="Image URL (Direct Link)">
+        <select id="cStatus">
+            <option value="forbidden">Forbidden</option>
+            <option value="limited">Limited</option>
+            <option value="semi_limited">Semi-Limited</option>
+        </select>
+        <button onclick="addCustom()">Add Custom Card</button>
     </div>
 </div>
 
@@ -236,7 +248,7 @@ function render() {
             el.className = "card";
             el.dataset.name = card.name;
             el.dataset.img = card.image;
-            el.dataset.type = card.type;
+            el.dataset.type = card.type || "Custom";
 
             el.innerHTML = `
                 <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
@@ -331,10 +343,9 @@ async function searchTCG(){
 }
 
 function addTCG(){
-    if(!selectedTCG) return alert("Select card");
+    if(!selectedTCG) return alert("Select a TCG card from the search results first.");
     const status = document.getElementById("tcgStatus").value;
     
-    // Uses .push to add to the bottom of the array
     cache[status].push({
         name:selectedTCG.name,
         type:selectedTCG.type,
@@ -343,6 +354,30 @@ function addTCG(){
     
     save(); 
     render();
+    selectedTCG = null;
+    document.getElementById("selected").textContent = "";
+}
+
+function addCustom() {
+    const name = document.getElementById("cName").value;
+    const img = document.getElementById("cImg").value;
+    const status = document.getElementById("cStatus").value;
+
+    if(!name || !img) return alert("Please enter both a name and an image URL.");
+
+    cache[status].push({
+        name: name,
+        type: "Custom",
+        image: img
+    });
+
+    save();
+    render();
+
+    // Clear inputs
+    document.getElementById("cName").value = "";
+    document.getElementById("cImg").value = "";
+    showToast("Custom Card Added!");
 }
 
 load();
