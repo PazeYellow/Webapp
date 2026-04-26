@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banlist System - Manual Sort</title>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<style>
+body {
+    margin:0;
+    font-family:'Segoe UI', sans-serif;
+    background:#0d0d0d;
+    color:#eee;
+    overflow-x: hidden;
+}
+
+header {
+    text-align:center;
+    padding:20px;
+    color:#d4af37;
+    font-size:24px;
+    letter-spacing:2px;
+    font-weight: bold;
+}
+
+.container { max-width:1100px; margin:auto; padding:10px; padding-bottom: 120px; }
+
+.section {
+    background:#1a1a1a;
+    padding:15px;
+    margin-bottom:40px;
+    border-radius:10px;
+    border: 1px solid #333;
+}
+
+.status-header {
+    font-size: 22px;
+    color: #fff;
+    text-transform: uppercase;
+    border-left: 5px solid #d4af37;
+    padding-left: 15px;
+    margin-bottom: 20px;
+    background: linear-gradient(90deg, #222, transparent);
+}
+
+.grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+    gap:12px;
+    min-height: 100px;
+}
+
+.card {
+    background:#222;
+    border-radius:8px;
+    overflow:hidden;
+    text-align:center;
+    position:relative;
+    border: 1px solid #333;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.admin-mode .card { cursor: grab; }
+.admin-mode .card:active { cursor: grabbing; }
+
+.card img { 
+    width:100%; 
+    display: block; 
+    pointer-events: none; 
+}
+
+.name {
+    font-size:10px;
+    padding:8px;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+    pointer-events: none;
+}
+
+#trash-zone {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 70px;
+    height: 70px;
+    background: #8b0000;
+    border-radius: 50%;
+    z-index: 9999;
+    text-align: center;
+    line-height: 70px;
+    font-size: 28px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+    border: 2px solid #ff4d4d;
+}
+
+#toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #d4af37;
+    color: #000;
+    padding: 10px 20px;
+    border-radius: 5px;
+    font-weight: bold;
+    display: none;
+    z-index: 10000;
+}
+
+.admin { display:none; background:#111; padding:20px; border-radius:10px; margin-top:20px; border: 1px dashed #444; }
+
+input,select {
+    width:100%;
+    margin:5px 0;
+    padding:10px;
+    background:#222;
+    color:white;
+    border:1px solid #333;
+}
+
+button {
+    width:100%;
+    padding:10px;
+    margin-top:5px;
+    background:#d4af37;
+    border:none;
+    cursor:pointer;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+#results img { margin: 5px; cursor: pointer; height: 80px; }
+
+.sortable-fallback {
+    opacity: 0.9 !important;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+    z-index: 9999 !important;
+}
+
+.sortable-ghost { opacity: 0.2; }
+</style>
+</head>
+
+<body>
+
+<div id="toast">Updating...</div>
+<div id="trash-zone">🗑️</div>
+
+<header>YGO BANLIST SYSTEM</header>
+
+<div class="container" id="main-content">
+    <div class="section">
+        <div class="status-header">Forbidden</div>
+        <div id="forbidden" class="grid"></div>
+    </div>
+    
+    <div class="section">
+        <div class="status-header">Limited</div>
+        <div id="limited" class="grid"></div>
+    </div>
+
+    <div class="section">
+        <div class="status-header">Semi-Limited</div>
+        <div id="semi_limited" class="grid"></div>
+    </div>
+
+    <button onclick="login()">ADMIN LOGIN</button>
+
+    <div id="admin-panel" class="admin">
+        <h3>ADD TCG CARD</h3>
+        <input id="searchInput" placeholder="Search TCG database...">
+        <button onclick="searchTCG()">Search</button>
+        <div id="results"></div>
+        <p id="selected" style="color:#d4af37; font-weight:bold; margin-top:10px;"></p>
+
+        <select id="tcgStatus">
+            <option value="forbidden">Forbidden</option>
+            <option value="limited">Limited</option>
+            <option value="semi_limited">Semi-Limited</option>
+        </select>
+        <button onclick="addTCG()">Add Selected TCG</button>
+
+        <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+
+        <h3>ADD CUSTOM CARD</h3>
+        <input id="cName" placeholder="Card Name">
+        <input id="cImg" placeholder="Image URL (Direct Link)">
+        <select id="cStatus">
+            <option value="forbidden">Forbidden</option>
+            <option value="limited">Limited</option>
+            <option value="semi_limited">Semi-Limited</option>
+        </select>
+        <button onclick="addCustom()">Add Custom Card</button>
+    </div>
+</div>
+
+<script>
+let cache = null;
+let admin = false;
+let selectedTCG = null;
+let sortables = [];
+
+const BIN = CONFIG.BIN_ID;
+const KEY = CONFIG.API_KEY;
+const ACCESS = CONFIG.ACCESS_KEY;
+
+function showToast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 1500);
+}
+
+async function load() {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
+    });
+    const data = await res.json();
+    cache = data.record;
+    ensure();
+    render();
+}
+
+function ensure() {
+    ["forbidden","limited","semi_limited"].forEach(k => {
+        if (!Array.isArray(cache[k])) cache[k] = [];
+    });
+}
+
+function render() {
+    sortables.forEach(s => s.destroy());
+    sortables = [];
+
+    const zones = ["forbidden","limited","semi_limited"];
+    zones.forEach(zone => {
+        const grid = document.getElementById(zone);
+        grid.innerHTML = "";
+
+        cache[zone].forEach(card => {
+            const el = document.createElement("div");
+            el.className = "card";
+            el.dataset.name = card.name;
+            el.dataset.img = card.image;
+            el.dataset.type = card.type || "Custom";
+
+            el.innerHTML = `
+                <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
+                <div class="name">${card.name}</div>
+            `;
+            grid.appendChild(el);
+        });
+
+        if (admin) {
+            sortables.push(new Sortable(grid, {
+                group: 'banlist',
+                animation: 200,
+                forceFallback: true, 
+                fallbackOnBody: true,
+                swapThreshold: 0.65,
+                ghostClass: 'sortable-ghost',
+                onEnd: () => syncAllLists()
+            }));
+        }
+    });
+
+    if (admin) {
+        document.getElementById("main-content").classList.add("admin-mode");
+        const trash = document.getElementById("trash-zone");
+        trash.style.display = "block";
+
+        sortables.push(new Sortable(trash, {
+            group: 'banlist',
+            onAdd: (evt) => {
+                evt.item.remove();
+                syncAllLists();
+                showToast("Deleted");
+            }
+        }));
+    }
+}
+
+function syncAllLists() {
+    ["forbidden", "limited", "semi_limited"].forEach(status => {
+        const grid = document.getElementById(status);
+        const cards = grid.querySelectorAll('.card');
+        cache[status] = Array.from(cards).map(cardEl => ({
+            name: cardEl.dataset.name,
+            image: cardEl.dataset.img,
+            type: cardEl.dataset.type
+        }));
+    });
+    save();
+}
+
+async function save() {
+    showToast("Saving...");
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":KEY,
+            "X-Access-Key":ACCESS
+        },
+        body: JSON.stringify(cache)
+    });
+}
+
+function login(){
+    const pass = prompt("Admin Password");
+    if(pass === CONFIG.ADMIN_PASS){
+        admin = true;
+        document.getElementById("admin-panel").style.display="block";
+        render();
+        showToast("Admin Mode Active");
+    }
+}
+
+async function searchTCG(){
+    const q = document.getElementById("searchInput").value;
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const results = document.getElementById("results");
+    results.innerHTML="";
+
+    if(!data.data) return;
+
+    data.data.slice(0,10).forEach(c=>{
+        const img=document.createElement("img");
+        img.src=c.card_images[0].image_url_small;
+        img.onclick=()=>{
+            selectedTCG=c;
+            document.getElementById("selected").textContent="Selected: "+c.name;
+        };
+        results.appendChild(img);
+    });
+}
+
+function addTCG(){
+    if(!selectedTCG) return alert("Select a TCG card from the search results first.");
+    const status = document.getElementById("tcgStatus").value;
+    
+    cache[status].push({
+        name:selectedTCG.name,
+        type:selectedTCG.type,
+        image:selectedTCG.card_images[0].image_url
+    });
+    
+    save(); 
+    render();
+    selectedTCG = null;
+    document.getElementById("selected").textContent = "";
+}
+
+function addCustom() {
+    const name = document.getElementById("cName").value;
+    const img = document.getElementById("cImg").value;
+    const status = document.getElementById("cStatus").value;
+
+    if(!name || !img) return alert("Please enter both a name and an image URL.");
+
+    cache[status].push({
+        name: name,
+        type: "Custom",
+        image: img
+    });
+
+    save();
+    render();
+
+    // Clear inputs
+    document.getElementById("cName").value = "";
+    document.getElementById("cImg").value = "";
+    showToast("Custom Card Added!");
+}
+
+load();
+</script>
+
+</body>
+</html>
