@@ -71,7 +71,15 @@ header {
 
 .card img { width:100%; display: block; }
 
-.name { font-size:10px; padding:6px; min-height: 28px; display: flex; align-items: center; justify-content: center; line-height: 1.2; }
+.name {
+    font-size:10px;
+    padding:6px;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+}
 
 .controls {
     display:none;
@@ -137,6 +145,7 @@ button {
         <button onclick="searchTCG()">Search</button>
         <div id="results"></div>
         <p id="selected" style="color:#d4af37; font-size: 14px; font-weight: bold;"></p>
+
         <select id="tcgStatus">
             <option value="forbidden">Forbidden</option>
             <option value="limited">Limited</option>
@@ -148,14 +157,16 @@ button {
 
         <h3>CUSTOM CARD</h3>
         <input id="cName" placeholder="Card Name">
-        <input id="cType" placeholder="Type (e.g. Fusion Monster, Spell Card, Effect Monster)">
+        <input id="cType" placeholder="Type">
         <textarea id="cEffect" placeholder="Effect Description"></textarea>
         <input id="cImg" placeholder="Image URL">
+
         <select id="cStatus">
             <option value="forbidden">Forbidden</option>
             <option value="limited">Limited</option>
             <option value="semi_limited">Semi-Limited</option>
         </select>
+
         <button onclick="addCustom()">Add Custom</button>
     </div>
 </div>
@@ -169,7 +180,7 @@ const BIN = CONFIG.BIN_ID;
 const KEY = CONFIG.API_KEY;
 const ACCESS = CONFIG.ACCESS_KEY;
 
-// 1. STRICT ORDER DEFINITION
+/* ---------------- FIXED ORDER ---------------- */
 const ORDER = [
     "Normal Monsters",
     "Effect Monsters",
@@ -183,96 +194,86 @@ const ORDER = [
 ];
 
 const DISPLAY_NAMES = {
-    "forbidden": "Forbidden",
-    "limited": "Limited",
-    "semi_limited": "Semi-Limited"
+    forbidden: "Forbidden",
+    limited: "Limited",
+    semi_limited: "Semi-Limited"
 };
 
-/* ---------------- STRICT CATEGORY ENGINE ---------------- */
+/* ---------------- FIXED TYPE ENGINE ---------------- */
 function getCategory(card) {
     const t = (card.type || "").toLowerCase();
 
-    // 1. Spells & Traps
+    // Spells / Traps FIRST
     if (t.includes("spell")) return "Spell Cards";
     if (t.includes("trap")) return "Trap Cards";
 
-    // 2. Extra Deck (Must check these before Effect Monster)
+    // Extra Deck
     if (t.includes("fusion")) return "Fusion Monsters";
     if (t.includes("synchro")) return "Synchro Monsters";
-    if (t.includes("xyz")) return "Xyz Monsters";
+    if (t.includes("xyz") || t.includes("xys")) return "Xyz Monsters";
     if (t.includes("link")) return "Link Monsters";
 
-    // 3. Ritual
+    // Ritual
     if (t.includes("ritual")) return "Ritual Monsters";
 
-    // 4. Main Deck Monsters
-    if (t.includes("normal")) return "Normal Monsters";
-    
-    // Default catch-all for anything else with "Monster" in the type
+    // Main Deck monsters
+    if (t.includes("normal monster")) return "Normal Monsters";
+
+    if (t.includes("effect monster")) return "Effect Monsters";
+
+    // fallback
     return "Effect Monsters";
 }
 
-/* ---------------- LOAD & RENDER ---------------- */
+/* ---------------- LOAD ---------------- */
 async function load() {
-    try {
-        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
-            headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
-        });
-        const data = await res.json();
-        cache = data.record;
-        ensure();
-        render();
-    } catch (err) {
-        console.error("Failed to load data", err);
-    }
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN}/latest`, {
+        headers: { "X-Master-Key": KEY, "X-Access-Key": ACCESS }
+    });
+    const data = await res.json();
+    cache = data.record;
+    ensure();
+    render();
 }
 
 function ensure() {
-    ["forbidden", "limited", "semi_limited"].forEach(k => {
+    ["forbidden","limited","semi_limited"].forEach(k => {
         if (!Array.isArray(cache[k])) cache[k] = [];
     });
 }
 
+/* ---------------- RENDER ---------------- */
 function render() {
-    ["forbidden", "limited", "semi_limited"].forEach(zone => {
+    ["forbidden","limited","semi_limited"].forEach(zone => {
         const root = document.getElementById(zone);
         root.innerHTML = `<div class="status-header">${DISPLAY_NAMES[zone]}</div>`;
 
-        // Create the groups
         const grouped = {};
-        ORDER.forEach(cat => grouped[cat] = []);
+        ORDER.forEach(o => grouped[o] = []);
 
-        // Sort items into groups
         cache[zone].forEach(card => {
             const cat = getCategory(card);
-            if (grouped[cat]) {
-                grouped[cat].push(card);
-            } else {
-                // Fallback for custom types not in ORDER
-                if(!grouped["Effect Monsters"]) grouped["Effect Monsters"] = [];
-                grouped["Effect Monsters"].push(card);
-            }
+            (grouped[cat] ||= []).push(card);
         });
 
-        // Render each category in the specific ORDER
         ORDER.forEach(cat => {
             const list = grouped[cat];
-            if (!list || list.length === 0) return;
+            if (!list?.length) return;
 
-            // Sort Alphabetically
-            list.sort((a, b) => a.name.localeCompare(b.name));
+            list.sort((a,b)=>a.name.localeCompare(b.name));
 
-            const catContainer = document.createElement("div");
-            catContainer.innerHTML = `<div class="title">${cat}</div>`;
-            
+            const wrap = document.createElement("div");
+            wrap.innerHTML = `<div class="title">${cat}</div>`;
+
             const grid = document.createElement("div");
             grid.className = "grid";
 
             list.forEach(card => {
                 const el = document.createElement("div");
                 el.className = "card";
+
                 el.innerHTML = `
-                    <img src="${card.image || ''}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
+                    <img src="${card.image}" onerror="this.src='https://via.placeholder.com/150x220?text=No+Image'">
                     <div class="name">${card.name}</div>
                     <div class="controls"></div>
                 `;
@@ -285,10 +286,12 @@ function render() {
                     mv.className = "mv";
                     mv.textContent = "Move Status";
                     mv.onclick = () => {
-                        const order = ["forbidden", "limited", "semi_limited"];
-                        const next = order[(order.indexOf(zone) + 1) % 3];
+                        const order = ["forbidden","limited","semi_limited"];
+                        const next = order[(order.indexOf(zone)+1)%3];
+
                         cache[zone] = cache[zone].filter(c => c !== card);
                         cache[next].push(card);
+
                         save();
                         render();
                     };
@@ -297,94 +300,90 @@ function render() {
                     del.className = "del";
                     del.textContent = "Remove";
                     del.onclick = () => {
-                        if(confirm("Delete " + card.name + "?")) {
-                            cache[zone] = cache[zone].filter(c => c !== card);
-                            save();
-                            render();
-                        }
+                        cache[zone] = cache[zone].filter(c => c !== card);
+                        save();
+                        render();
                     };
 
                     controls.appendChild(mv);
                     controls.appendChild(del);
                 }
+
                 grid.appendChild(el);
             });
 
-            catContainer.appendChild(grid);
-            root.appendChild(catContainer);
+            wrap.appendChild(grid);
+            root.appendChild(wrap);
         });
     });
 }
 
-/* ---------------- API ACTIONS ---------------- */
+/* ---------------- SAVE ---------------- */
 async function save() {
     await fetch(`https://api.jsonbin.io/v3/b/${BIN}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "X-Master-Key": KEY, "X-Access-Key": ACCESS },
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "X-Master-Key":KEY,
+            "X-Access-Key":ACCESS
+        },
         body: JSON.stringify(cache)
     });
 }
 
-function login() {
+/* ---------------- ADMIN ---------------- */
+function login(){
     const pass = prompt("Admin Password");
-    if (pass === CONFIG.ADMIN_PASS) {
+    if(pass === CONFIG.ADMIN_PASS){
         admin = true;
-        document.getElementById("admin").style.display = "block";
+        document.getElementById("admin").style.display="block";
         render();
-    } else {
-        alert("Incorrect password.");
     }
 }
 
-async function searchTCG() {
+/* ---------------- API ---------------- */
+async function searchTCG(){
     const q = document.getElementById("searchInput").value;
-    if (!q) return;
-    
     const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
     const data = await res.json();
+
     const results = document.getElementById("results");
-    results.innerHTML = "";
+    results.innerHTML="";
 
-    if (data.data) {
-        data.data.slice(0, 10).forEach(c => {
-            const img = document.createElement("img");
-            img.src = c.card_images[0].image_url_small;
-            img.width = 75;
-            img.onclick = () => {
-                selectedTCG = c;
-                document.getElementById("selected").textContent = "Selected: " + c.name;
-            };
-            results.appendChild(img);
-        });
-    }
+    data.data?.slice(0,10).forEach(c=>{
+        const img=document.createElement("img");
+        img.src=c.card_images[0].image_url_small;
+        img.onclick=()=>{
+            selectedTCG=c;
+            document.getElementById("selected").textContent="Selected: "+c.name;
+        };
+        results.appendChild(img);
+    });
 }
 
-function addTCG() {
-    if (!selectedTCG) return alert("Search and select a card first!");
+function addTCG(){
+    if(!selectedTCG) return alert("Select card");
+
     cache[document.getElementById("tcgStatus").value].push({
-        name: selectedTCG.name,
-        type: selectedTCG.type,
-        image: selectedTCG.card_images[0].image_url
+        name:selectedTCG.name,
+        type:selectedTCG.type,
+        image:selectedTCG.card_images[0].image_url
     });
-    save();
-    render();
+
+    save();render();
 }
 
-function addCustom() {
-    const name = document.getElementById("cName").value;
-    if(!name) return alert("Name is required");
-    
+function addCustom(){
+    const name=document.getElementById("cName").value;
+    if(!name) return;
+
     cache[document.getElementById("cStatus").value].push({
-        name: name,
-        type: document.getElementById("cType").value,
-        image: document.getElementById("cImg").value
+        name,
+        type:document.getElementById("cType").value,
+        image:document.getElementById("cImg").value
     });
-    save();
-    render();
-    // Clear inputs
-    document.getElementById("cName").value = "";
-    document.getElementById("cType").value = "";
-    document.getElementById("cImg").value = "";
+
+    save();render();
 }
 
 load();
