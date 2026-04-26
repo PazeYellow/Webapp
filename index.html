@@ -9,7 +9,7 @@
 <style>
 :root { --dark:#121212; --gold:#d4af37; --red:#8b0000; --card-bg:#1e1e1e; }
 
-body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px; }
+body { font-family:Segoe UI; background:var(--dark); color:#eee; padding:10px; }
 .container { max-width:1000px; margin:auto; }
 
 .section { background:var(--card-bg); padding:15px; margin-bottom:20px; border-radius:10px; }
@@ -25,7 +25,6 @@ body { font-family:'Segoe UI'; background:var(--dark); color:#eee; padding:10px;
     overflow:hidden;
     text-align:center;
     font-size:.7em;
-    position:relative;
 }
 
 .card-item img { width:100%; }
@@ -122,7 +121,7 @@ button {
 <input id="custName" placeholder="Name">
 <input id="custType" placeholder="Type">
 <textarea id="custEffect" placeholder="Effect"></textarea>
-<input id="custImg" placeholder="Image URL (optional)">
+<input id="custImg" placeholder="Image URL">
 
 <select id="custStatus">
 <option value="forbidden">Forbidden</option>
@@ -138,16 +137,15 @@ button {
 
 <script>
 
+let recordCache = null;
+let isAdmin = false;
+let selectedTCG = null;
+
 const BIN_ID = CONFIG.BIN_ID;
 const API_KEY = CONFIG.API_KEY;
 const ACCESS_KEY = CONFIG.ACCESS_KEY;
-const ADMIN_PASS = CONFIG.ADMIN_PASS;
 
-let selectedTCG = null;
-let recordCache = null;
-let isAdmin = false;
-
-// LOAD
+// ---------------- LOAD ONCE ----------------
 async function loadBanlist() {
     const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
         headers: {
@@ -159,19 +157,43 @@ async function loadBanlist() {
     const data = await res.json();
     recordCache = data.record;
 
-    render(recordCache);
+    sanitize();
+    render();
 }
 
-// RENDER
-function render(list) {
+// ---------------- CLEAN DATA ----------------
+function sanitize() {
+    ["forbidden","limited","semi_limited"].forEach(k => {
+        if (!Array.isArray(recordCache[k])) recordCache[k] = [];
+
+        // remove null / broken entries
+        recordCache[k] = recordCache[k].filter(c => c && c.name);
+    });
+}
+
+// ---------------- SAVE ----------------
+function saveToBin() {
+    fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Master-Key": API_KEY,
+            "X-Access-Key": ACCESS_KEY
+        },
+        body: JSON.stringify(recordCache)
+    }).catch(console.error);
+}
+
+// ---------------- RENDER ----------------
+function render() {
 
     ["forbidden","limited","semi_limited"].forEach(s => {
 
-        if(!list[s]) list[s] = [];
+        const el = document.getElementById(
+            s === "semi_limited" ? "semi-list" : s + "-list"
+        );
 
-        const el = document.getElementById(s==="semi_limited"?"semi-list":s+"-list");
-
-        el.innerHTML = list[s].map((c, i) => {
+        el.innerHTML = recordCache[s].map((c,i) => {
 
             const id = c.id || (c.name + i);
 
@@ -181,7 +203,7 @@ function render(list) {
                 <img src="${c.image || ""}">
                 <div>${c.name}</div>
 
-                <div class="controls" style="display:${isAdmin ? "flex" : "none"}">
+                <div class="controls" style="display:${isAdmin ? "flex":"none"}">
 
                     <button class="move" onclick="moveCard('${id}','${s}','forbidden')">F</button>
                     <button class="move" onclick="moveCard('${id}','${s}','limited')">L</button>
@@ -197,53 +219,47 @@ function render(list) {
     });
 }
 
-// LOGIN
+// ---------------- LOGIN ----------------
 function login() {
-    if(prompt("Password") === ADMIN_PASS){
+    if(prompt("Password") === CONFIG.ADMIN_PASS){
         isAdmin = true;
-        document.getElementById("admin").style.display = "block";
-        loadBanlist(); // re-render to show buttons
+        document.getElementById("admin").style.display="block";
+        render();
     }
 }
 
-// SEARCH
-async function searchTCG() {
-    const q = document.getElementById("searchInput").value;
-    const box = document.getElementById("searchResults");
+// ---------------- DELETE (SAFE) ----------------
+function deleteCard(id,status){
 
-    box.innerHTML="...";
+    recordCache[status] = recordCache[status]
+        .filter(c => (c.id || c.name) !== id)
+        .filter(Boolean); // IMPORTANT CLEAN
 
-    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
-    const data = await res.json();
-
-    box.innerHTML = data.data.slice(0,10).map(card => `
-        <div class="search-card" onclick='selectTCG(${JSON.stringify(card).replace(/'/g,"&apos;")})'>
-            <img src="${card.card_images[0].image_url_small}">
-        </div>
-    `).join("");
+    sanitize();
+    saveToBin();
+    render();
 }
 
-// SELECT
-function selectTCG(card){
-    selectedTCG = card;
-    document.getElementById("selectedCard").innerText = card.name;
+// ---------------- MOVE (SAFE) ----------------
+function moveCard(id,from,to){
+
+    const index = recordCache[from].findIndex(c => (c.id || c.name) === id);
+
+    if(index === -1) return;
+
+    const card = recordCache[from][index];
+
+    recordCache[from].splice(index,1); // SAFE remove (no null holes)
+
+    recordCache[to].push(card);
+
+    sanitize();
+    saveToBin();
+    render();
 }
 
-// ADD TCG
-async function addTCG() {
-
-    const card = {
-        id: Date.now(),
-        name: selectedTCG.name,
-        type: selectedTCG.type,
-        image: selectedTCG.card_images[0].image_url
-    };
-
-    await push(card, tcgStatus.value);
-}
-
-// CUSTOM
-async function addCustom() {
+// ---------------- ADD ----------------
+function addCustom(){
 
     const card = {
         id: Date.now(),
@@ -253,57 +269,48 @@ async function addCustom() {
         image: custImg.value || ""
     };
 
-    await push(card, custStatus.value);
+    recordCache[custStatus.value].push(card);
+
+    sanitize();
+    saveToBin();
+    render();
 }
 
-// PUSH
-async function push(card,status){
+// ---------------- TCG SEARCH ----------------
+async function searchTCG(){
 
-    recordCache[status].push(card);
+    const q = searchInput.value;
 
-    await save();
+    const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+    const data = await res.json();
+
+    searchResults.innerHTML = data.data.slice(0,10).map(card => `
+        <div onclick='selectTCG(${JSON.stringify(card)})'>
+            <img width="80" src="${card.card_images[0].image_url_small}">
+        </div>
+    `).join("");
 }
 
-// DELETE
-async function deleteCard(id,status){
-
-    recordCache[status] = recordCache[status].filter(c =>
-        (c.id || c.name + recordCache[status].indexOf(c)) !== id
-    );
-
-    await save();
+function selectTCG(card){
+    selectedTCG = card;
+    selectedCard.innerText = card.name;
 }
 
-// MOVE
-async function moveCard(id,from,to){
+// ---------------- ADD TCG ----------------
+function addTCG(){
 
-    const card = recordCache[from].find(c =>
-        (c.id || c.name + recordCache[from].indexOf(c)) === id
-    );
+    const card = {
+        id: Date.now(),
+        name: selectedTCG.name,
+        type: selectedTCG.type,
+        image: selectedTCG.card_images[0].image_url
+    };
 
-    recordCache[from] = recordCache[from].filter(c =>
-        (c.id || c.name + recordCache[from].indexOf(c)) !== id
-    );
+    recordCache[tcgStatus.value].push(card);
 
-    recordCache[to].push(card);
-
-    await save();
-}
-
-// SAVE TO BIN
-async function save(){
-
-    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-        method:"PUT",
-        headers:{
-            "Content-Type":"application/json",
-            "X-Master-Key":API_KEY,
-            "X-Access-Key":ACCESS_KEY
-        },
-        body:JSON.stringify(recordCache)
-    });
-
-    loadBanlist();
+    sanitize();
+    saveToBin();
+    render();
 }
 
 loadBanlist();
